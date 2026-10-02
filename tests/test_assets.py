@@ -1,5 +1,6 @@
 import unittest
 from collections import Counter
+from pathlib import Path
 
 from litmetica3d.conversion import bundled_asset_path
 from litmetica3d.model_loader import ModelLoader, _rotate_vertex
@@ -17,7 +18,41 @@ class AssetSmokeTests(unittest.TestCase):
         cls.loader.close()
 
     def test_asset_inventory(self):
-        self.assertGreaterEqual(self.loader.block_count, 1100)
+        self.assertGreaterEqual(
+            self.loader.block_count, 1100,
+            f"assets={self.loader.asset_path!r}, "
+            f"is_file={self.loader.asset_path.is_file()}, "
+            f"archive={self.loader.jar is not None}, "
+            f"entries={len(self.loader._asset_names)}, "
+            f"sample={sorted(self.loader._asset_names)[:3]!r}",
+        )
+
+    def test_archive_and_directory_have_equivalent_assets(self):
+        resources = Path(__file__).resolve().parents[1] / "litmetica3d/mc_assets"
+        archive_path = resources / "26.2.zip"
+        directory_path = resources / "26.2"
+        self.assertTrue(archive_path.is_file(), repr(archive_path))
+        self.assertTrue(directory_path.is_dir(), repr(directory_path))
+        archive = ModelLoader(archive_path)
+        directory = ModelLoader(directory_path)
+        try:
+            self.assertIsNotNone(archive.jar, repr(archive_path))
+            self.assertGreaterEqual(archive.block_count, 1100,
+                                    repr(sorted(archive._asset_names)[:5]))
+            self.assertEqual(directory.block_count, archive.block_count)
+            for name, props in (
+                ("minecraft:stone", {}),
+                ("minecraft:oak_stairs", {"facing": "east", "half": "top",
+                 "shape": "outer_left", "waterlogged": "false"}),
+            ):
+                with self.subTest(block=name):
+                    expected = directory.resolve(name, props, (1, 2, 3))
+                    actual = archive.resolve(name, props, (1, 2, 3))
+                    self.assertEqual("ok", expected.status, expected.detail)
+                    self.assertEqual(expected, actual)
+        finally:
+            archive.close()
+            directory.close()
 
     def test_representative_states(self):
         states = [

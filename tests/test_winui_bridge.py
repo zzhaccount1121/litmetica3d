@@ -59,7 +59,8 @@ class BridgeTests(unittest.TestCase):
         self.assertEqual(12, triangles)
         self.assertTrue(report["solid"]["printable"])
         self.assertFalse(model.with_suffix(".report.json").exists())
-        self.assertEqual(self.output / "L3D_output" / self.source.stem / model.name, model)
+        expected_model = self.output / "L3D_output" / self.source.stem / model.name
+        self.assertEqual(expected_model.resolve(strict=True), model.resolve(strict=True))
         self.assertFalse(list(self.output.glob(".litmetica3d-*")))
         self.assertEqual("complete", self.events[-1]["type"])
 
@@ -84,8 +85,10 @@ class BridgeTests(unittest.TestCase):
         run(self.request, lambda: False, self.send)
         self.assertEqual("original", sentinel.read_text())
         report = next(e["report"] for e in self.events if e["type"] == "report")
-        self.assertEqual(self.output / "L3D_output" / f"{self.source.stem} (2)" / f"{self.source.stem}.stl",
-                         Path(report["output_path"]))
+        expected_model = (self.output / "L3D_output" / f"{self.source.stem} (2)"
+                          / f"{self.source.stem}.stl")
+        self.assertEqual(expected_model.resolve(strict=True),
+                         Path(report["output_path"]).resolve(strict=True))
 
     def test_cancel_removes_unpublished_files(self):
         def interrupted(options, progress, cancelled):
