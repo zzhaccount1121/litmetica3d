@@ -1,6 +1,12 @@
 import unittest
 from collections import Counter
 from pathlib import Path
+import io
+import json
+import tempfile
+import zipfile
+
+from PIL import Image
 
 from litmetica3d.conversion import bundled_asset_path
 from litmetica3d.model_loader import ModelLoader, _rotate_vertex
@@ -53,6 +59,49 @@ class AssetSmokeTests(unittest.TestCase):
         finally:
             archive.close()
             directory.close()
+
+    def test_legacy_backslash_archive_matches_forward_slash_archive(self):
+        texture = io.BytesIO()
+        Image.new("RGBA", (2, 2), (40, 170, 80, 127)).save(texture, format="PNG")
+        entries = {
+            "assets/test/blockstates/cube.json": json.dumps({
+                "variants": {"": {"model": "test:block/cube"}},
+            }).encode(),
+            "assets/test/models/block/cube.json": json.dumps({
+                "textures": {"all": "test:block/color"},
+                "elements": [{"from": [0, 0, 0], "to": [16, 16, 16],
+                    "faces": {direction: {"texture": "#all"} for direction in
+                              ("up", "down", "north", "south", "east", "west")}}],
+            }).encode(),
+            "assets/test/textures/block/color.png": texture.getvalue(),
+        }
+        with tempfile.TemporaryDirectory() as folder:
+            loaders = []
+            try:
+                for index, separator in enumerate(("/", "\\")):
+                    path = Path(folder) / f"assets-{index}.zip"
+                    with zipfile.ZipFile(path, "w") as archive:
+                        for member, data in entries.items():
+                            # Assign after ZipInfo construction: otherwise its
+                            # Windows-only normalization hides this regression.
+                            info = zipfile.ZipInfo()
+                            info.filename = member.replace("/", separator)
+                            info.orig_filename = info.filename
+                            archive.writestr(info, data)
+                    loaders.append(ModelLoader(path, visual_textures=True))
+                forward, legacy = loaders
+                self.assertEqual(forward._asset_names, legacy._asset_names)
+                self.assertEqual(1, legacy.block_count)
+                for closed in (False, True):
+                    expected = forward.resolve("test:cube", {}, closed=closed)
+                    self.assertEqual("ok", expected.status, expected.detail)
+                    self.assertTrue(expected.faces)
+                    self.assertEqual(expected, legacy.resolve("test:cube", {}, closed=closed))
+                self.assertEqual(forward.texture_bytes("test:block/color"),
+                                 legacy.texture_bytes("test:block/color"))
+            finally:
+                for loader in loaders:
+                    loader.close()
 
     def test_representative_states(self):
         states = [

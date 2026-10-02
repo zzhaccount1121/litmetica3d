@@ -264,7 +264,13 @@ class ModelLoader:
         self.tinted_texture_count = 0
 
         if self.jar is not None:
-            self._asset_names = set(self.jar.namelist())
+            # Older bundled ZIPs contain Windows separators. ZipInfo only
+            # normalizes these on Windows; keep a portable lookup while reading
+            # each member by its original archive name on every platform.
+            self._archive_paths = {
+                name.replace("\\", "/"): name for name in self.jar.namelist()
+            }
+            self._asset_names = set(self._archive_paths)
         else:
             assets = self.asset_path / "assets"
             self._asset_names = {
@@ -282,14 +288,14 @@ class ModelLoader:
 
     def _read_json(self, path: str) -> dict:
         if self.jar is not None:
-            raw = self.jar.read(path)
+            raw = self.jar.read(self._archive_paths.get(path, path))
         else:
             raw = (self.asset_path / Path(path)).read_bytes()
         return json.loads(raw.decode("utf-8"))
 
     def _read_bytes(self, path: str) -> bytes:
         if self.jar is not None:
-            return self.jar.read(path)
+            return self.jar.read(self._archive_paths.get(path, path))
         return (self.asset_path / Path(path)).read_bytes()
 
     @staticmethod
