@@ -14,7 +14,8 @@ ROOT = Path(__file__).resolve().parents[1]
 PYTHON_VERSION = "3.13.15"
 PYTHON_SHA256 = "d1f04d990aee1253d8569e8e5104e30fa9f5fa830899f14843448872d936a2cf"
 DEPENDENCIES = ["numpy==2.5.3", "manifold3d==3.5.3", "Pillow==12.3.0"]
-VERSION = "0.6.2"
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+from litmetica3d import __version__ as VERSION
 NAME = f"Litematica3D-WinUI-v{VERSION}-win-x64"
 
 def run(*args, **kwargs):
@@ -64,6 +65,10 @@ def build(destination, runtime_from=None, no_restore=False):
     shutil.copytree(ROOT / "litmetica3d", package / "litmetica3d",
                     ignore=shutil.ignore_patterns("__pycache__", "*.pyc"))
     shutil.copy2(ROOT / "LICENSE", package / "LICENSE")
+    for document in ("README.md", f"RELEASE_NOTES_v{VERSION}.md", "ISSUE_2_VERIFICATION.md"):
+        source = ROOT / document
+        if source.is_file():
+            shutil.copy2(source, package / document)
     # Keep runtime/package notices distributed by their vendors.
     notices = package / "licenses"
     notices.mkdir()
@@ -89,17 +94,16 @@ def build(destination, runtime_from=None, no_restore=False):
 转换报告默认只在界面显示；需要时可在“日志”页面手动另存 JSON。
 强制取消原生计算后可能留下 .litmetica3d-* 临时文件夹。
 
-本版本为原生 WinUI 前端修改版。
-Original author: b站@ZZHaccount
+作者：b站@ZZHaccount
 项目及许可：见 LICENSE。
-源码：https://github.com/sitbat/litmetica3d/tree/feat/winui3-frontend
-原项目：https://github.com/zzhaccount1121/litmetica3d
+源码：https://github.com/zzhaccount1121/litmetica3d
+WinUI 原始贡献：https://github.com/sitbat/litmetica3d/tree/feat/winui3-frontend
 Python 官方运行时：https://www.python.org/downloads/release/python-31315/
 Python 许可位于 runtime/python/LICENSE.txt；依赖许可保留在其 dist-info 中。
 .NET 及 Windows App SDK 许可保留在发布目录和 licenses 中。
 """, encoding="utf-8-sig")
     (package / "build-info.json").write_text(json.dumps({
-        "python": PYTHON_VERSION, "python_archive_sha256": PYTHON_SHA256,
+        "version": VERSION, "python": PYTHON_VERSION, "python_archive_sha256": PYTHON_SHA256,
         "dependencies": DEPENDENCIES, "architecture": "win-x64"
     }, indent=2), encoding="utf-8")
     run(str(runtime / "python.exe"), "-c",

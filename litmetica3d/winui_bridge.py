@@ -78,7 +78,8 @@ def run(request, cancelled, send=emit):
             raise ValueError(f"批量任务中存在同名投影：{source.stem}")
         names.add(key)
     output.mkdir(parents=True, exist_ok=True)
-    destinations = [next_model_path(output, source, fmt) for source in files]
+    reserved = set()
+    destinations = [next_model_path(output, source, fmt, reserved) for source in files]
     for index, source in enumerate(files):
         if cancelled():
             raise ConversionCancelled()
@@ -98,8 +99,16 @@ def run(request, cancelled, send=emit):
             if cancelled():
                 raise ConversionCancelled()
             data = asdict(report)
+            # Atomic directory rename cannot overwrite an existing Windows
+            # result. A competing publication gets a fresh reserved name.
+            while True:
+                try:
+                    stage.rename(destination)
+                    break
+                except FileExistsError:
+                    destinations[index] = next_model_path(output, source, fmt, reserved)
+                    destination = destinations[index].parent
             data["output_path"] = str(destinations[index])
-            stage.rename(destination)
         send("report", report=data)
     send("complete", text=f"已完成 {len(files)} 个投影的转换。")
 

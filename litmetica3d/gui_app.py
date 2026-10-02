@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import multiprocessing as mp
-import os
 import pathlib
 import time
 
@@ -17,11 +16,11 @@ from PySide6.QtWidgets import (
     QVBoxLayout, QWidget,
 )
 
-from .gui_qt import ConversionWorker
+from .gui_qt import ConversionWorker, _open_output_folder
 from .gui_styles import DARK_STYLE, LIGHT_STYLE
 from .output_layout import normalize_output_root
 
-VERSION = "0.5.3"
+from . import __version__ as VERSION
 EXTRA_DARK_STYLE = """
 QGroupBox {
     border: 1px solid #2a3547; border-radius: 12px;
@@ -253,14 +252,13 @@ class MainWindow(QMainWindow):
         self.format_combo = self._combo(("stl", "obj"))
         self.water_combo = self._combo(("cube", "drop", "level"))
         self.fallback_combo = self._combo(("cube", "ignore"))
-        self.optimize_combo = self._combo(("raw", "safe", "experimental"))
         self.geometry_combo = self._combo(("print", "visual"))
         self.components_combo = self._combo(("keep", "remove-small", "main"))
         self.cavities_combo = self._combo(("preserve", "fill"))
         self.boolean_combo = self._combo(("voxel32", "fail"))
         fields = (
             ("格式", self.format_combo), ("水体", self.water_combo),
-            ("未知方块", self.fallback_combo), ("面数优化", self.optimize_combo),
+            ("未知方块", self.fallback_combo),
             ("输出用途", self.geometry_combo), ("独立壳体", self.components_combo),
             ("封闭空腔", self.cavities_combo), ("并集失败", self.boolean_combo),
         )
@@ -399,7 +397,6 @@ class MainWindow(QMainWindow):
         self._set_value(self.format_combo, "stl")
         self._set_value(self.water_combo, "cube")
         self._set_value(self.fallback_combo, "cube")
-        self._set_value(self.optimize_combo, "safe")
         self._set_value(self.geometry_combo, "print")
         self._set_value(self.components_combo, "keep")
         self._set_value(self.cavities_combo, "preserve")
@@ -432,28 +429,27 @@ class MainWindow(QMainWindow):
             if preset == "print":
                 values = {
                     "format": "stl", "water": "drop", "fallback": "ignore",
-                    "optimize": "safe", "geometry": "print",
+                    "geometry": "print",
                     "components": "main", "cavities": "fill",
                     "emission": "exact",
                 }
             elif preset == "visual":
                 values = {
                     "format": "obj", "water": "level", "fallback": "ignore",
-                    "optimize": "safe", "geometry": "visual",
+                    "geometry": "visual",
                     "components": "keep", "cavities": "preserve",
                     "emission": "material",
                 }
             else:
                 values = {
                     "format": "obj", "water": "drop", "fallback": "ignore",
-                    "optimize": "safe", "geometry": "visual",
+                    "geometry": "visual",
                     "components": "keep", "cavities": "preserve",
                     "emission": "exact",
                 }
             self._set_value(self.format_combo, values["format"])
             self._set_value(self.water_combo, values["water"])
             self._set_value(self.fallback_combo, values["fallback"])
-            self._set_value(self.optimize_combo, values["optimize"])
             self._set_value(self.geometry_combo, values["geometry"])
             self._set_value(self.components_combo, values["components"])
             self._set_value(self.cavities_combo, values["cavities"])
@@ -472,7 +468,7 @@ class MainWindow(QMainWindow):
     def _connect_advanced_signals(self):
         combos = (
             self.format_combo, self.water_combo, self.fallback_combo,
-            self.optimize_combo, self.geometry_combo, self.components_combo,
+            self.geometry_combo, self.components_combo,
             self.cavities_combo, self.boolean_combo, self.emission_combo,
         )
         spins = (
@@ -533,12 +529,14 @@ class MainWindow(QMainWindow):
                 self.components_combo, self.cavities_combo,
                 self.boolean_combo,
             ):
-                widget.setEnabled(True)
+                widget.setEnabled(is_print)
+                widget.setToolTip("仅打印模式可用。" if not is_print else "")
             self.component_spin.setEnabled(
-                self._value(self.components_combo) == "remove-small"
+                is_print and self._value(self.components_combo) == "remove-small"
             )
         finally:
             self._syncing_constraints = False
+
     def _advanced_changed(self, *_args):
         if self._applying_preset or self._syncing_constraints:
             return
@@ -554,7 +552,7 @@ class MainWindow(QMainWindow):
         options["emission_config"] = options["emission_config"] or "默认"
         self.preset_summary.setPlainText(
             "输出：{format}  |  水体：{water}  |  未知方块：{fallback}  |  "
-            "优化：{optimize}  |  特殊优化（填平镂空）：{solid_textures}\n"
+            "自动优化  |  特殊优化（填平镂空）：{solid_textures}\n"
             "用途：{geometry}  |  独立壳体：{components}  |  "
             "空腔：{cavities}  |  并集失败：{boolean_fallback}\n"
             "比例：{scale:g}  |  最小厚度：{thickness:g}  |  "
@@ -615,12 +613,7 @@ class MainWindow(QMainWindow):
             self.emission_config_edit.setText(file)
 
     def _open_output(self):
-        selected = self.output_edit.text().strip()
-        folder = str(normalize_output_root(selected)) if selected else ""
-        if folder and pathlib.Path(folder).exists():
-            os.startfile(folder)
-        else:
-            QMessageBox.information(self, "输出位置", "输出文件夹不存在。")
+        _open_output_folder(self, self.output_edit.text())
 
     def _clear_current_log(self):
         current = self.log_tabs.currentWidget()
@@ -636,9 +629,9 @@ class MainWindow(QMainWindow):
         has_textures = is_visual
         emission_mode = self._value(self.emission_combo)
         has_emission = has_textures and emission_mode != "none"
-        components = self._value(self.components_combo)
-        cavities = self._value(self.cavities_combo)
-        boolean_fallback = self._value(self.boolean_combo)
+        components = self._value(self.components_combo) if not is_visual else "keep"
+        cavities = self._value(self.cavities_combo) if not is_visual else "preserve"
+        boolean_fallback = self._value(self.boolean_combo) if not is_visual else "voxel32"
         min_component_volume = (
             self.component_spin.value()
             if components == "remove-small"
@@ -649,7 +642,7 @@ class MainWindow(QMainWindow):
             "format": output_format,
             "water": self._value(self.water_combo),
             "fallback": self._value(self.fallback_combo),
-            "optimize": self._value(self.optimize_combo),
+            "optimize": "safe",
             "thickness": self.thickness_spin.value(),
             "scale": self.scale_spin.value(),
             "center": self.center_check.isChecked(),

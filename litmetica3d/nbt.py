@@ -184,7 +184,7 @@ def _tag_type_for_value(value: Any) -> int:
 
 # ── Reading ─────────────────────────────────────────────────────────────────
 
-def read_nbt(data: io.BytesIO) -> dict[str, Any]:
+def read_nbt(data: io.BytesIO, skip_names: frozenset[str] = frozenset()) -> dict[str, Any]:
     """
     Read an NBT root compound from a BytesIO stream.
 
@@ -195,10 +195,10 @@ def read_nbt(data: io.BytesIO) -> dict[str, Any]:
     if tag_type != TAG_COMPOUND:
         raise ValueError(f"Root tag must be TAG_Compound (10), got {tag_type}")
     _root_name = _read_string(data)  # root name – we don't store it
-    return _read_compound(data)
+    return _read_compound(data, skip_names)
 
 
-def _read_tag(data: io.BytesIO, tag_type: int) -> Any:
+def _read_tag(data: io.BytesIO, tag_type: int, skip_names: frozenset[str] = frozenset()) -> Any:
     """Dispatch reader for a single tag value (no name, no type byte)."""
     if tag_type == TAG_BYTE:
         return _read_ubyte(data)
@@ -221,24 +221,24 @@ def _read_tag(data: io.BytesIO, tag_type: int) -> Any:
     elif tag_type == TAG_LONG_ARRAY:
         return _read_long_array(data)
     elif tag_type == TAG_LIST:
-        return _read_list(data)
+        return _read_list(data, skip_names)
     elif tag_type == TAG_COMPOUND:
-        return _read_compound(data)
+        return _read_compound(data, skip_names)
     else:
         raise ValueError(f"Unknown NBT tag type: {tag_type}")
 
 
-def _read_list(data: io.BytesIO) -> list:
+def _read_list(data: io.BytesIO, skip_names: frozenset[str] = frozenset()) -> list:
     """Read a TAG_List: list_type byte, length int, then length entries."""
     list_type = _read_ubyte(data)
     length = _read_int(data)
     result = []
     for _ in range(length):
-        result.append(_read_tag(data, list_type))
+        result.append(_read_tag(data, list_type, skip_names))
     return result
 
 
-def _read_compound(data: io.BytesIO) -> dict[str, Any]:
+def _read_compound(data: io.BytesIO, skip_names: frozenset[str] = frozenset()) -> dict[str, Any]:
     """Read a TAG_Compound: name-type pairs terminated by TAG_End."""
     result = {}
     while True:
@@ -246,7 +246,14 @@ def _read_compound(data: io.BytesIO) -> dict[str, Any]:
         if tag_type == TAG_END:
             break
         name = _read_string(data)
-        result[name] = _read_tag(data, tag_type)
+        if name in skip_names and tag_type in {TAG_LONG_ARRAY, TAG_INT_ARRAY, TAG_BYTE_ARRAY}:
+            count = _read_int(data)
+            width = {TAG_LONG_ARRAY: 8, TAG_INT_ARRAY: 4, TAG_BYTE_ARRAY: 1}[tag_type]
+            if count < 0 or count * width > data.getbuffer().nbytes - data.tell():
+                raise ValueError(f"NBT 数组 {name} 长度无效或数据截断")
+            data.seek(count * width, io.SEEK_CUR)
+        else:
+            result[name] = _read_tag(data, tag_type, skip_names)
     return result
 
 
@@ -332,10 +339,10 @@ def _write_list_value(buf: io.BytesIO, value: list) -> None:
 
 # ── GZip helpers ────────────────────────────────────────────────────────────
 
-def read_gzip_nbt(path: str) -> dict[str, Any]:
+def read_gzip_nbt(path: str, skip_names: frozenset[str] = frozenset()) -> dict[str, Any]:
     """Read a GZip-compressed NBT file and return the root compound dict."""
     with gzip.open(path, "rb") as f:
-        return read_nbt(io.BytesIO(f.read()))
+        return read_nbt(io.BytesIO(f.read()), skip_names)
 
 
 def read_raw_nbt(path: str) -> dict[str, Any]:

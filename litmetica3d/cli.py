@@ -1,10 +1,11 @@
-"""Command line interface for litmetica3d v0.5."""
+"""Command line interface for the shared Litematica 3D conversion engine."""
 
 import argparse
 import pathlib
 import sys
 
 from .conversion import ConversionOptions, convert
+from . import __version__
 from .litematic import load_schematic_info, load_schematic
 
 
@@ -22,10 +23,6 @@ def _parser() -> argparse.ArgumentParser:
     parser.add_argument("--jar", dest="assets", help=argparse.SUPPRESS)
     parser.add_argument("--water", choices=["cube", "drop", "level"], default="cube")
     parser.add_argument("--fallback", choices=["cube", "ignore"], default="cube")
-    parser.add_argument(
-        "--optimize", choices=["raw", "safe", "experimental"], default="safe"
-    )
-    parser.add_argument("--no-optimize", action="store_true")
     parser.add_argument("--minimum-thickness", type=float, default=1 / 16)
     parser.add_argument("--geometry", choices=["print", "visual"], default="print")
     parser.add_argument(
@@ -67,7 +64,7 @@ def _parser() -> argparse.ArgumentParser:
     parser.add_argument("--info", action="store_true")
     parser.add_argument("--list-regions", action="store_true")
     parser.add_argument("--gui", action="store_true")
-    parser.add_argument("--version", action="version", version="litmetica3d 0.5.3")
+    parser.add_argument("--version", action="version", version=f"litmetica3d {__version__}")
     return parser
 
 
@@ -88,7 +85,7 @@ def main(argv: list[str] | None = None) -> int:
         print(f"名称: {info.name}\n作者: {info.author}\n数据版本: {info.data_version}")
         return 0
     if args.list_regions:
-        for name in load_schematic(str(source)).regions:
+        for name in load_schematic_info(str(source)).regions:
             print(name)
         return 0
     if not args.output:
@@ -109,7 +106,6 @@ def main(argv: list[str] | None = None) -> int:
                 center=args.center,
                 water=args.water,
                 fallback=args.fallback,
-                optimize="raw" if args.no_optimize else args.optimize,
                 minimum_thickness=args.minimum_thickness,
                 regions=tuple(args.region),
                 color=args.color,

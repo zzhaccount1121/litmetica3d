@@ -1,11 +1,24 @@
 import os
+import pytest
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 from PySide6.QtCore import QSettings
 from PySide6.QtWidgets import QApplication, QAbstractSpinBox
 
+from litmetica3d import gui_app
 from litmetica3d.gui_app import MainWindow, VERSION
+
+
+@pytest.fixture(autouse=True)
+def isolated_settings(tmp_path, monkeypatch):
+    qt_settings = QSettings
+
+    def create_settings(*_args):
+        return qt_settings(str(tmp_path / "presets.ini"), qt_settings.Format.IniFormat)
+
+    monkeypatch.setattr(gui_app, "QSettings", create_settings)
+    monkeypatch.setitem(globals(), "QSettings", create_settings)
 
 
 def test_preset_gui_layout_and_values():
@@ -14,7 +27,7 @@ def test_preset_gui_layout_and_values():
     settings.clear()
     window = MainWindow()
     try:
-        assert VERSION == "0.5.3"
+        assert VERSION == "0.6.3"
         assert window.dark_theme is True
         for spin in (
             window.scale_spin, window.thickness_spin,
@@ -106,16 +119,20 @@ def test_advanced_constraints_and_normalized_snapshot():
         assert window.visual_group.isEnabled()
         assert window.textures_check.isChecked()
         assert not window.textures_check.isEnabled()
-        assert window.components_combo.isEnabled()
+        assert not window.components_combo.isEnabled()
+        assert not window.cavities_combo.isEnabled()
+        assert not window.boolean_combo.isEnabled()
+        assert not window.component_spin.isEnabled()
         assert visual["components"] == "keep"
         assert visual["cavities"] == "preserve"
         window._set_value(window.components_combo, "main")
         window._set_value(window.cavities_combo, "fill")
         window._set_value(window.boolean_combo, "fail")
         visual_custom = window._snapshot()
-        assert visual_custom["components"] == "main"
-        assert visual_custom["cavities"] == "fill"
-        assert visual_custom["boolean_fallback"] == "fail"
+        assert visual_custom["components"] == "keep"
+        assert visual_custom["cavities"] == "preserve"
+        assert visual_custom["boolean_fallback"] == "voxel32"
+        assert visual_custom["min_component_volume"] == 1 / 4096
 
         # none keeps visual textures but disables all emission output/editing.
         window._set_value(window.emission_combo, "none")
@@ -145,6 +162,12 @@ def test_advanced_constraints_and_normalized_snapshot():
         assert stl["geometry"] == "print"
         assert stl["textures"] is False
         assert stl["emission"] is False
+        assert window.components_combo.isEnabled()
+        assert window.cavities_combo.isEnabled()
+        assert window.boolean_combo.isEnabled()
+        assert stl["components"] == "main"
+        assert stl["cavities"] == "fill"
+        assert stl["boolean_fallback"] == "fail"
 
         # The component-volume threshold only applies to remove-small.
         window._set_value(window.format_combo, "obj")

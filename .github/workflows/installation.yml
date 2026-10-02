@@ -1,0 +1,71 @@
+name: Installation and regressions
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  python:
+    name: ${{ matrix.os }} / Python ${{ matrix.python }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 35
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, ubuntu-latest, macos-14]
+        python: ['3.10', '3.13']
+    env:
+      QT_QPA_PLATFORM: offscreen
+      PYTHONUTF8: '1'
+      PIP_DISABLE_PIP_VERSION_CHECK: '1'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+      - name: Linux Qt runtime libraries
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y libegl1 libopengl0 libxkbcommon0
+      - name: Install source and test dependencies
+        run: python -m pip install -e . pytest
+      - name: Python and Qt regressions
+        run: python -m pytest -q
+      - name: Isolated wheel and editable installation checks
+        run: python tests/install_smoke.py --work-dir "${{ runner.temp }}/litmetica3d-installation"
+      - name: Preserve installation evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: installation-${{ matrix.os }}-py${{ matrix.python }}
+          path: ${{ runner.temp }}/litmetica3d-installation/logs
+          if-no-files-found: ignore
+
+  winui:
+    name: Windows x64 / WinUI compile and engine smoke
+    runs-on: windows-latest
+    timeout-minutes: 20
+    env:
+      PYTHONUTF8: '1'
+      PIP_DISABLE_PIP_VERSION_CHECK: '1'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+      - name: Install source engine dependencies
+        run: python -m pip install -e .
+      - name: Compile the native frontend (no packaging or publishing)
+        run: dotnet build frontend/Litmetica3D.WinUI/Litmetica3D.WinUI.csproj -c Release -p:Platform=x64
+      - name: C# to Python engine smoke (no GUI)
+        shell: pwsh
+        run: |
+          python -c "import os, runpy; from pathlib import Path; runpy.run_path('tests/install_smoke.py')['write_fixture'](Path(os.environ['RUNNER_TEMP']) / 'winui-one-stone.litematic')"
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          dotnet run --project tests/WinUI.EngineSmoke/WinUI.EngineSmoke.csproj -c Release -- "$env:RUNNER_TEMP\winui-one-stone.litematic"

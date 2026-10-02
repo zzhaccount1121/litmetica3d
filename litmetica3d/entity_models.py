@@ -64,16 +64,24 @@ def _chest(
     # Closed chest: body, lid and front latch.  Double-chest halves reach
     # the shared block edge while single chests retain the one-pixel margin.
     chest_type = props.get("type", "single")
+    if name == "minecraft:ender_chest":
+        chest_type = "single"
     x1, x2 = 1, 15
-    if chest_type == "left":
+    lock_x1, lock_x2 = 7, 9
+    if chest_type == "right":
         x2 = 16
-    elif chest_type == "right":
+        lock_x1, lock_x2 = 15, 16
+    elif chest_type == "left":
         x1 = 0
+        lock_x1, lock_x2 = 0, 1
     faces = []
     faces += _box((x1, 0, 1, x2, 10, 15), name, texture, (0, 19))
     faces += _box((x1, 10, 1, x2, 14, 15), name, texture, (0, 0))
-    faces += _box((7, 7, 14.75, 9, 12, 16), name, texture, (0, 0))
-    return _facing_y(faces, props.get("facing", "south"))
+    lock = ((7, 7, 14.75, 9, 12, 16) if chest_type == "single"
+            else (lock_x1, 7, 15, lock_x2, 11, 16))
+    faces += _box(lock, name, texture, (0, 0))
+    angle = {"south": 0, "west": -90, "north": 180, "east": 90}.get(props.get("facing"), 0)
+    return _rotate(faces, "y", angle) if angle else faces
 
 
 def _chest_box(values, material, texture, uv_origin):

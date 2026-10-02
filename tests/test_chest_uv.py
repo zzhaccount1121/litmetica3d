@@ -54,11 +54,15 @@ def test_all_chest_textures_use_same_top_net(name):
 
 @pytest.mark.parametrize('kind',['single','left','right'])
 @pytest.mark.parametrize('facing',['south','north','east','west'])
-def test_print_geometry_is_unchanged(kind,facing):
-    x1,x2=(1,16) if kind=='left' else (0,15) if kind=='right' else (1,15)
+def test_print_chest_has_correct_half_and_lock(kind,facing):
+    x1,x2=(1,16) if kind=='right' else (0,15) if kind=='left' else (1,15)
+    lx1,lx2=(15,16) if kind=='right' else (0,1) if kind=='left' else (7,9)
     original=[]
-    for box,origin in [((x1,0,1,x2,10,15),(0,19)),((x1,10,1,x2,14,15),(0,0)),((7,7,14.75,9,12,16),(0,0))]:
+    lock=(7,7,14.75,9,12,16) if kind=='single' else (lx1,7,15,lx2,11,16)
+    for box,origin in [((x1,0,1,x2,10,15),(0,19)),((x1,10,1,x2,14,15),(0,0)),(lock,(0,0))]:
         original.extend(_box(box,'minecraft:chest',uv_origin=origin))
-    original=_facing_y(original,facing)
+    from litmetica3d.entity_models import _rotate
+    angle={'south':0,'north':180,'east':90,'west':-90}[facing]
+    original=_rotate(original,'y',angle) if angle else original
     actual=get_entity_geometry('minecraft:chest',{'type':kind,'facing':facing},visual=False)
     assert signature(original)==signature(actual)

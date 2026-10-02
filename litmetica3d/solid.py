@@ -305,7 +305,7 @@ def process_components_and_cavities(
     return_mesh: bool = False,
 ):
     source_mesh = solid.to_mesh()
-    vertices = np.asarray(source_mesh.vert_properties[:, :3], dtype=np.float64)
+    vertices = np.asarray(source_mesh.vert_properties[:, :3])
     triangles = np.asarray(source_mesh.tri_verts, dtype=np.uint32)
     shells, triangle_shell_ids = _split_mesh_shells(vertices, triangles)
     positives = [shell for shell in shells if shell.volume >= 0]
@@ -317,8 +317,9 @@ def process_components_and_cavities(
     ]
     report.volume_before_cavity_fill = sum(shell.volume for shell in shells)
 
-    removed_bounds = []
-    selected_main = None
+    all_positives = positives
+    removed = []
+    positive_solids: dict[int, m3d.Manifold] = {}
     if components == "main" and positives:
         selected_main = min(
             positives,
@@ -327,44 +328,78 @@ def process_components_and_cavities(
             ),
         )
         removed = [shell for shell in positives if shell is not selected_main]
-        report.removed_components += len(removed)
-        report.removed_component_volume += sum(
-            shell.volume for shell in removed
-        )
-        removed_bounds.extend(shell.bounds for shell in removed)
         positives = [selected_main]
         report.main_component_volume = selected_main.volume
         report.main_component_bounds = selected_main.bounds
-        if cavities == "preserve":
-            negatives = _cavities_owned_by_main(
-                selected_main,
-                positives=[selected_main, *removed],
-                cavities=negatives,
-            )
-        else:
-            negatives = []
 
     if components == "remove-small":
         kept = []
         for shell in positives:
             if shell.volume < min_component_volume:
-                report.removed_components += 1
-                report.removed_component_volume += shell.volume
-                removed_bounds.append(shell.bounds)
+                removed.append(shell)
             else:
                 kept.append(shell)
         positives = kept
-        if removed_bounds:
-            negatives = [
+
+    if removed:
+        removed_ids = {shell.shell_id for shell in removed}
+        if positives and negatives:
+            owners = _cavity_owners(
+                positives=all_positives, cavities=negatives,
+                vertices=vertices, triangles=triangles,
+                triangle_shell_ids=triangle_shell_ids,
+                positive_solids=positive_solids,
+            )
+            removed_cavities = [
                 cavity for cavity in negatives
-                if not any(_contains_bounds(bounds, cavity.bounds)
-                           for bounds in removed_bounds)
+                if owners[cavity.shell_id] in removed_ids
             ]
+        else:
+            removed_cavities = negatives
+        removed_cavity_ids = {shell.shell_id for shell in removed_cavities}
+        negatives = [
+            cavity for cavity in negatives
+            if cavity.shell_id not in removed_cavity_ids
+        ]
+        report.removed_components += len(removed)
+        # A removed hollow component contains less material than its outer
+        # boundary's volume. Its owned (negative) boundaries travel with it.
+        report.removed_component_volume += sum(
+            shell.volume for shell in [*removed, *removed_cavities]
+        )
+
+    retained_material_volume = sum(s.volume for s in positives) + sum(
+        s.volume for s in negatives
+    )
 
     report.retained_component_count = len(positives)
-    if cavities == "fill":
-        selected = positives
-    elif components == "keep":
+    if cavities == "fill" and negatives:
+        # Each positive boundary becomes a filled solid. Compose only joins
+        # boundary lists; a real union is required to absorb nested islands.
+        parts = []
+        for shell in positives:
+            if shell.shell_id not in positive_solids:
+                mask = triangle_shell_ids == shell.shell_id
+                positive_solids[shell.shell_id] = _manifold_from_selected_triangles(
+                    vertices, triangles[mask]
+                )
+            parts.append(positive_solids[shell.shell_id])
+        result = materialize_manifold(union_balanced(parts))
+        final_mesh = result.to_mesh()
+        vertices = np.asarray(final_mesh.vert_properties[:, :3])
+        triangles = np.asarray(final_mesh.tri_verts, dtype=np.uint32)
+        final_shells, _ = _split_mesh_shells(vertices, triangles)
+        report.retained_component_count = sum(s.volume > 0 for s in final_shells)
+        report.volume_after_cavity_fill = result.volume()
+        # Filling adds only previously empty space in retained components,
+        # not volume deleted by policy or already occupied by nested islands.
+        report.filled_cavity_volume = max(
+            0.0, report.volume_after_cavity_fill - retained_material_volume
+        )
+        if return_mesh:
+            return result, vertices.copy(), triangles.copy()
+        return result
+    elif not removed:
         result = solid
         selected = None
     else:
@@ -380,18 +415,11 @@ def process_components_and_cavities(
             vertices, triangles[mask], return_mesh=True
         )
 
-    report.volume_after_cavity_fill = sum(
-        shell.volume for shell in positives
-    ) + (0.0 if cavities == "fill" else sum(
-        shell.volume for shell in negatives
-    ))
-    report.filled_cavity_volume = max(
-        0.0,
-        report.volume_after_cavity_fill - report.volume_before_cavity_fill,
-    )
+    report.volume_after_cavity_fill = retained_material_volume
+    report.filled_cavity_volume = 0.0
     if return_mesh:
         if selected is None:
-            return result, vertices.astype(np.float32, copy=False), triangles
+            return result, vertices.copy(), triangles.copy()
         return result, vertices, triangles
     return result
 
@@ -441,15 +469,7 @@ def _split_mesh_shells(
     _, shell_ids = np.unique(labels, return_inverse=True)
     shell_count = int(shell_ids.max()) + 1
 
-    points = vertices[triangles]
-    triangle_volumes = np.einsum(
-        "ij,ij->i",
-        points[:, 0],
-        np.cross(points[:, 1], points[:, 2]),
-    ) / 6.0
-    volumes = np.bincount(
-        shell_ids, weights=triangle_volumes, minlength=shell_count
-    )
+    points = vertices[triangles].astype(np.float64, copy=False)
     triangle_low = points.min(axis=1)
     triangle_high = points.max(axis=1)
     lows = np.full((shell_count, 3), np.inf)
@@ -458,6 +478,20 @@ def _split_mesh_shells(
     np.maximum.at(highs, shell_ids, triangle_high)
     min_triangles = np.full(shell_count, count, dtype=np.int64)
     np.minimum.at(min_triangles, shell_ids, np.arange(count))
+
+    # Signed volume is translation invariant for a closed shell. Work around
+    # a point on each shell to avoid cancellation at large world coordinates,
+    # especially for float32 meshes returned by the native library.
+    origins = points[min_triangles, 0]
+    points -= origins[shell_ids, None, :]
+    triangle_volumes = np.einsum(
+        "ij,ij->i",
+        points[:, 0],
+        np.cross(points[:, 1], points[:, 2]),
+    ) / 6.0
+    volumes = np.bincount(
+        shell_ids, weights=triangle_volumes, minlength=shell_count
+    )
 
     shells = [
         _MeshShell(
@@ -488,30 +522,35 @@ def _manifold_from_selected_triangles(
         )
     used, inverse = np.unique(triangles.reshape(-1), return_inverse=True)
     compact_triangles = inverse.reshape((-1, 3)).astype(np.uint32)
-    mesh = m3d.Mesh(
-        vertices[used].astype(np.float32),
-        compact_triangles,
-        tolerance=1e-7,
-    )
+    compact_vertices = vertices[used].astype(np.float32)
+    mesh = m3d.Mesh(compact_vertices, compact_triangles, tolerance=1e-7)
     result = m3d.Manifold(mesh)
     if result.status() != m3d.Error.NoError:
         raise ValueError(f"shell filtering produced invalid solid: {result.status()}")
     if return_mesh:
-        return result, mesh.vert_properties[:, :3], compact_triangles
+        return result, compact_vertices, compact_triangles
     return result
 
 
-def _cavities_owned_by_main(
-    main: _MeshShell,
+def _cavity_owners(
     *,
     positives: list[_MeshShell],
     cavities: list[_MeshShell],
-) -> list[_MeshShell]:
-    """Assign cavities to the smallest fully containing positive boundary."""
+    vertices: np.ndarray,
+    triangles: np.ndarray,
+    triangle_shell_ids: np.ndarray,
+    positive_solids: dict[int, m3d.Manifold],
+) -> dict[int, int]:
+    """Assign cavities to the smallest geometrically containing boundary.
+
+    AABBs are only a broad phase: a concave or toroidal component can have a
+    containing box without enclosing the cavity. Reversed cavity boundaries
+    form positive solids, allowing exact containment via Boolean difference.
+    """
     if not cavities:
-        return []
+        return {}
     bounds = np.asarray([shell.bounds for shell in positives])
-    box_volumes = np.prod(bounds[:, 3:] - bounds[:, :3], axis=1)
+    volumes = np.asarray([shell.volume for shell in positives])
     min_triangles = np.asarray(
         [shell.min_triangle for shell in positives], dtype=np.int64
     )
@@ -528,7 +567,7 @@ def _cavities_owned_by_main(
                     spatial_index.setdefault((x, y, z), []).append(
                         shell_index
                     )
-    kept = []
+    owners = {}
     for cavity in cavities:
         cavity_bounds = np.asarray(cavity.bounds)
         center = (cavity_bounds[:3] + cavity_bounds[3:]) * 0.5
@@ -548,22 +587,31 @@ def _cavities_owned_by_main(
             candidates = local
         owner = None
         if len(candidates):
-            choice = np.lexsort((
+            choices = np.lexsort((
                 min_triangles[candidates],
-                box_volumes[candidates],
-            ))[0]
-            owner = positives[int(candidates[choice])]
-        if owner is main:
-            kept.append(cavity)
-    return kept
-
-
-def _contains_bounds(outer, inner, eps: float = 1e-8) -> bool:
-    return (
-        outer[0] - eps <= inner[0] and outer[1] - eps <= inner[1]
-        and outer[2] - eps <= inner[2] and outer[3] + eps >= inner[3]
-        and outer[4] + eps >= inner[4] and outer[5] + eps >= inner[5]
-    )
+                volumes[candidates],
+            ))
+            cavity_triangles = triangles[triangle_shell_ids == cavity.shell_id]
+            cavity_solid = _manifold_from_selected_triangles(
+                vertices, cavity_triangles[:, (0, 2, 1)]
+            )
+            for choice in choices:
+                candidate = positives[int(candidates[choice])]
+                if candidate.shell_id not in positive_solids:
+                    mask = triangle_shell_ids == candidate.shell_id
+                    positive_solids[candidate.shell_id] = (
+                        _manifold_from_selected_triangles(vertices, triangles[mask])
+                    )
+                outside = cavity_solid - positive_solids[candidate.shell_id]
+                if outside.status() != m3d.Error.NoError:
+                    raise ValueError(f"cavity containment failed: {outside.status()}")
+                if outside.is_empty():
+                    owner = candidate.shell_id
+                    break
+        if owner is None:
+            raise ValueError("closed cavity has no geometrically containing component")
+        owners[cavity.shell_id] = owner
+    return owners
 
 
 def manifold_to_mesh(solid: m3d.Manifold) -> Mesh:

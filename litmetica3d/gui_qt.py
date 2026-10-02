@@ -5,13 +5,12 @@ from __future__ import annotations
 from dataclasses import asdict
 import json
 import multiprocessing as mp
-import os
 import pathlib
 import queue
 import time
 
-from PySide6.QtCore import QObject, QSettings, Qt, QThread, Signal, Slot
-from PySide6.QtGui import QCloseEvent, QDragEnterEvent, QDropEvent, QFont
+from PySide6.QtCore import QObject, QSettings, Qt, QThread, Signal, Slot, QUrl
+from PySide6.QtGui import QCloseEvent, QDragEnterEvent, QDropEvent, QFont, QDesktopServices
 from PySide6.QtWidgets import (
     QApplication, QCheckBox, QComboBox, QDoubleSpinBox, QFileDialog, QFrame,
     QGridLayout, QHBoxLayout, QLabel, QLineEdit, QListWidget, QMainWindow,
@@ -22,7 +21,21 @@ from PySide6.QtWidgets import (
 from .gui_styles import DARK_STYLE, LIGHT_STYLE
 from .output_layout import next_model_path, normalize_output_root
 
-VERSION = "0.5.3"
+from . import __version__ as VERSION
+
+
+def _open_output_folder(parent, selected):
+    """Open an existing output directory without shell or platform assumptions."""
+    selected = selected.strip()
+    try:
+        folder = normalize_output_root(selected) if selected else None
+        if folder is None or not folder.is_dir():
+            QMessageBox.information(parent, "输出位置", "输出文件夹不存在。")
+            return
+        if not QDesktopServices.openUrl(QUrl.fromLocalFile(str(folder.resolve()))):
+            QMessageBox.warning(parent, "输出位置", "无法打开输出文件夹。")
+    except (OSError, RuntimeError, ValueError) as exc:
+        QMessageBox.warning(parent, "输出位置", f"无法打开输出文件夹：{exc}")
 
 
 class GUIConversionCancelled(Exception):
@@ -243,6 +256,7 @@ class MainWindow(QMainWindow):
         self.cancel_event = self.context.Event()
         self.worker_thread = self.worker = None
         self.geometry = "print"
+        self._syncing_constraints = False
         self._build()
         self._restore()
         self._apply_theme()
@@ -428,16 +442,12 @@ class MainWindow(QMainWindow):
         self.fallback_combo = self._combo((
             ("回落成立方体", "cube"), ("忽略", "ignore"),
         ))
-        self.optimize_combo = self._combo((
-            ("原始", "raw"), ("安全", "safe"), ("实验性", "experimental"),
-        ))
         self.scale_spin = self._spin(1.0, .0001, 10000, 4)
         self.thickness_spin = self._spin(1 / 16, 1 / 256, 1, 6)
         fields = (
             ("输出格式", self.format_combo),
             ("水体处理", self.water_combo),
             ("未知方块", self.fallback_combo),
-            ("面数优化", self.optimize_combo),
             ("模型比例", self.scale_spin),
             ("最小实体厚度（格）", self.thickness_spin),
         )
@@ -454,8 +464,7 @@ class MainWindow(QMainWindow):
 
         self.visual_card = Card(
             "视觉与发光",
-            "视觉 OBJ 写入贴图和 Blender 辅助文件；"
-            "视觉 STL 仍会裁切完全透明像素。",
+            "视觉用途仅支持 OBJ，写入贴图和 Blender 辅助文件。",
         )
         vgrid = QGridLayout()
         self.textures_check = QCheckBox("使用原版贴图")
@@ -475,6 +484,9 @@ class MainWindow(QMainWindow):
         layout.addWidget(self.visual_card)
         layout.addStretch()
         self.format_combo.currentIndexChanged.connect(self._sync_visual)
+        self.emission_combo.currentIndexChanged.connect(self._sync_visual)
+        self.emission_check.toggled.connect(self._sync_visual)
+        self.textures_check.toggled.connect(self._sync_visual)
         return self._scroll(layout)
 
     def _advanced_page(self):
@@ -497,6 +509,7 @@ class MainWindow(QMainWindow):
             ("局部体素 32 回退", "voxel32"), ("失败并停止", "fail"),
         ))
         self.component_spin = self._spin(1 / 4096, 0, 1e9, 12)
+        self.components_combo.currentIndexChanged.connect(self._sync_visual)
         for i, (label, widget) in enumerate((
             ("独立壳体策略", self.components_combo),
             ("封闭空腔策略", self.cavities_combo),
@@ -518,14 +531,14 @@ class MainWindow(QMainWindow):
         self.emission_config_edit.setPlaceholderText(
             "可选：自定义 .json 发光规则"
         )
-        browse = QPushButton("选择 JSON")
-        browse.clicked.connect(self._choose_emission_config)
+        self.emission_config_button = QPushButton("选择 JSON")
+        self.emission_config_button.clicked.connect(self._choose_emission_config)
         grid = QGridLayout()
         grid.addWidget(self._label("转换区域"), 0, 0)
         grid.addWidget(self.regions_edit, 0, 1, 1, 2)
         grid.addWidget(self._label("发光规则"), 1, 0)
         grid.addWidget(self.emission_config_edit, 1, 1)
-        grid.addWidget(browse, 1, 2)
+        grid.addWidget(self.emission_config_button, 1, 2)
         grid.setColumnStretch(1, 1)
         selection.box.addLayout(grid)
         layout.addWidget(selection)
@@ -657,17 +670,39 @@ class MainWindow(QMainWindow):
         self._sync_visual()
 
     def _sync_visual(self):
-        visual_obj = (
-            self.geometry == "visual"
-            and self._value(self.format_combo) == "obj"
-        )
-        self.print_mode.setChecked(self.geometry == "print")
-        self.visual_mode.setChecked(self.geometry == "visual")
-        for widget in (
-            self.textures_check, self.emission_check,
-            self.emission_combo, self.emission_strength_spin,
-        ):
-            widget.setEnabled(visual_obj)
+        if self._syncing_constraints:
+            return
+        self._syncing_constraints = True
+        try:
+            is_stl = self._value(self.format_combo) == "stl"
+            if is_stl or self.geometry not in {"print", "visual"}:
+                self.geometry = "print"
+            is_print = self.geometry == "print"
+            is_visual = not is_stl and not is_print
+            self.print_mode.setChecked(is_print)
+            self.visual_mode.setChecked(is_visual)
+            self.visual_mode.setEnabled(not is_stl)
+            self.visual_mode.setToolTip("STL 只支持打印用途。" if is_stl else "")
+            self.visual_card.setEnabled(is_visual)
+            self.color_check.setEnabled(is_visual)
+            self.textures_check.setChecked(is_visual)
+            self.textures_check.setEnabled(False)
+            self.textures_check.setToolTip("贴图由输出用途自动决定。")
+            emission_available = is_visual and self._value(self.emission_combo) != "none"
+            emission_active = emission_available and self.emission_check.isChecked()
+            self.emission_check.setEnabled(emission_available)
+            self.emission_combo.setEnabled(is_visual)
+            self.emission_strength_spin.setEnabled(emission_active)
+            self.emission_config_edit.setEnabled(emission_active)
+            self.emission_config_button.setEnabled(emission_active)
+            for widget in (self.components_combo, self.cavities_combo, self.boolean_combo):
+                widget.setEnabled(is_print)
+                widget.setToolTip("仅打印模式可用。" if not is_print else "")
+            self.component_spin.setEnabled(
+                is_print and self._value(self.components_combo) == "remove-small"
+            )
+        finally:
+            self._syncing_constraints = False
 
     def _preset(self, name):
         if name == "print":
@@ -679,7 +714,6 @@ class MainWindow(QMainWindow):
         self.geometry = values[0]
         self._set_value(self.format_combo, values[1])
         self._set_value(self.water_combo, values[2])
-        self._set_value(self.optimize_combo, "safe")
         self._set_value(self.emission_combo, values[3])
         if name != "print":
             self.textures_check.setChecked(True)
@@ -744,37 +778,40 @@ class MainWindow(QMainWindow):
             self.emission_config_edit.setText(file)
 
     def _open_output(self):
-        selected = self.output_edit.text().strip()
-        folder = str(normalize_output_root(selected)) if selected else ""
-        if folder and pathlib.Path(folder).exists():
-            os.startfile(folder)
-        else:
-            QMessageBox.information(self, "输出位置", "输出文件夹尚不存在。")
+        _open_output_folder(self, self.output_edit.text())
 
     def _clear_log(self):
         self.log_edit.clear()
 
     def _snapshot(self):
+        output_format = self._value(self.format_combo)
+        geometry = self.geometry if output_format == "obj" else "print"
+        if geometry not in {"print", "visual"}:
+            geometry = "print"
+        is_visual = output_format == "obj" and geometry == "visual"
+        emission_mode = self._value(self.emission_combo)
+        has_emission = is_visual and self.emission_check.isChecked() and emission_mode != "none"
+        components = self._value(self.components_combo) if not is_visual else "keep"
         return {
-            "format": self._value(self.format_combo),
+            "format": output_format,
             "water": self._value(self.water_combo),
             "fallback": self._value(self.fallback_combo),
-            "optimize": self._value(self.optimize_combo),
+            "optimize": "safe",
             "thickness": self.thickness_spin.value(),
             "scale": self.scale_spin.value(),
             "center": self.center_check.isChecked(),
-            "color": self.color_check.isChecked(),
-            "textures": self.textures_check.isChecked(),
-            "emission": self.emission_check.isChecked(),
-            "emission_strength": self.emission_strength_spin.value(),
-            "blender_lights": self._value(self.emission_combo),
-            "emission_config": self.emission_config_edit.text().strip(),
+            "color": is_visual and self.color_check.isChecked(),
+            "textures": is_visual,
+            "emission": has_emission,
+            "emission_strength": self.emission_strength_spin.value() if has_emission else 1.0,
+            "blender_lights": emission_mode if has_emission else "none",
+            "emission_config": self.emission_config_edit.text().strip() if has_emission else "",
             "regions": self.regions_edit.text().strip(),
-            "geometry": self.geometry,
-            "components": self._value(self.components_combo),
-            "cavities": self._value(self.cavities_combo),
-            "boolean_fallback": self._value(self.boolean_combo),
-            "min_component_volume": self.component_spin.value(),
+            "geometry": geometry,
+            "components": components,
+            "cavities": self._value(self.cavities_combo) if not is_visual else "preserve",
+            "boolean_fallback": self._value(self.boolean_combo) if not is_visual else "voxel32",
+            "min_component_volume": self.component_spin.value() if components == "remove-small" else 1 / 4096,
         }
 
     def _start(self):
@@ -886,7 +923,6 @@ class MainWindow(QMainWindow):
             (self.format_combo, "format", "stl"),
             (self.water_combo, "water", "cube"),
             (self.fallback_combo, "fallback", "cube"),
-            (self.optimize_combo, "optimize", "safe"),
             (self.emission_combo, "blender_lights", "exact"),
             (self.components_combo, "components", "keep"),
             (self.cavities_combo, "cavities", "preserve"),

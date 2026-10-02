@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import math
 import pathlib
 import sys
 import time
@@ -109,8 +110,9 @@ def _cluster_editable_lights(sources: list[dict]) -> list[dict]:
             tuple(item["block_position"]): item for item in members
         }
         remaining = set(by_position)
-        while remaining:
-            seed = min(remaining)
+        for seed in sorted(by_position):
+            if seed not in remaining:
+                continue
             remaining.remove(seed)
             stack = [seed]
             component = []
@@ -219,6 +221,8 @@ class ConversionOptions:
     water: str = "cube"
     fallback: str = "cube"
     optimize: str = "safe"
+    # Compatibility field for older callers. There are no user-selectable
+    # levels: print uses solid union and visual exports indexed OBJ automatically.
     minimum_thickness: float = 1 / 16
     regions: tuple[str, ...] = ()
     color: bool = False
@@ -235,6 +239,26 @@ class ConversionOptions:
     emission_config: pathlib.Path | None = None
     blender_lights: str = "exact"
     save_report: bool = False
+
+
+def validate_options(options: ConversionOptions) -> None:
+    """Shared CLI/API/desktop validation, before opening input or output."""
+    for name in ("scale", "minimum_thickness", "min_component_volume", "emission_strength"):
+        value = getattr(options, name)
+        if not isinstance(value, (int, float)) or not math.isfinite(value):
+            raise ValueError(f"{name} 必须是有限数值")
+        if value < 0 or (name in {"scale", "minimum_thickness"} and value == 0):
+            raise ValueError(f"{name} 必须{'大于' if name in {'scale', 'minimum_thickness'} else '不小于'} 0")
+    choices = {
+        "output_format": {"stl", "obj"}, "geometry": {"print", "visual"},
+        "water": {"cube", "drop", "level"}, "fallback": {"cube", "ignore"},
+        "components": {"keep", "remove-small", "main"}, "cavities": {"preserve", "fill"},
+        "boolean_fallback": {"voxel32", "fail"},
+        "blender_lights": {"none", "off", "material", "exact", "clustered"},
+    }
+    for name, allowed in choices.items():
+        if getattr(options, name) not in allowed:
+            raise ValueError(f"无效参数 {name}: {getattr(options, name)}")
 
 
 @dataclass
@@ -257,6 +281,8 @@ class ConversionReport:
     water_mode: str = "cube"
     fallback_mode: str = "cube"
     optimize_mode: str = "safe"
+    coordinate_origin: tuple[int, int, int] = (0, 0, 0)
+    emission_rule_coordinates: str = "schematic"
     source_blocks: int = 0
     rendered_blocks: int = 0
     entity_model_blocks: int = 0
@@ -407,13 +433,14 @@ def convert(
     progress: Progress | None = None,
     cancelled: Callable[[], bool] | None = None,
 ) -> ConversionReport:
+    validate_options(options)
     progress = progress or (lambda stage, value, text: None)
     cancelled = cancelled or (lambda: False)
     report = ConversionReport(
         str(options.input_path), str(options.output_path),
         water_mode=options.water,
         fallback_mode=options.fallback,
-        optimize_mode=options.optimize,
+        optimize_mode="automatic",
         geometry_mode=options.geometry,
         seamless_glass=options.geometry == "visual" and options.seamless_glass,
         solid_textures=options.solid_textures,
@@ -471,8 +498,10 @@ def convert(
                 )
                 entries.append((region_name, world, state))
         report.source_blocks = len(entries)
+        minimum = (0, 0, 0)
         if entries:
             minimum = tuple(min(item[1][i] for item in entries) for i in range(3))
+            report.coordinate_origin = minimum
             entries = [
                 (region, tuple(pos[i] - minimum[i] for i in range(3)), state)
                 for region, pos, state in entries
@@ -569,7 +598,8 @@ def convert(
                         else:
                             report.intentionally_invisible += 1
                     else:
-                        report.record(result, state, region, pos, options.fallback)
+                        report.record(result, state, region,
+                                      tuple(pos[i] + minimum[i] for i in range(3)), options.fallback)
                         if options.fallback == "cube":
                             local_faces = _cuboid(
                                 0, 0, 0, 1, 1, 1, state.name
@@ -592,7 +622,8 @@ def convert(
                 # overrides may give identical states different strengths.
                 local_faces = list(local_faces)
                 multiplier, override_color = resolve_override(
-                    emission_config, state.name, props, region, pos
+                    emission_config, state.name, props, region,
+                    tuple(pos[i] + minimum[i] for i in range(3)),
                 )
                 multiplier *= max(0.0, float(options.emission_strength))
                 block_peak = 0.0
@@ -787,6 +818,9 @@ def convert(
                 print_vertices[:, 2] -= (low[2] + high[2]) / 2
             if options.scale != 1:
                 print_vertices = print_vertices * options.scale
+            import numpy as np
+            if not np.isfinite(print_vertices).all():
+                raise ValueError("缩放后的顶点超出输出格式范围，已停止导出")
             progress(
                 "solid", 0.915,
                 f"实体检查完成：{solid_report.component_count} 个独立壳体，"

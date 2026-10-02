@@ -357,7 +357,7 @@ public sealed partial class MainWindow
                 Pair(python, Button("保存设置", (_, _) =>
                 { SaveSettings(); ShowNotice("已保存", "应用设置已更新。", InfoBarSeverity.Success); })),
                 Muted("留空即可使用内置环境，无需额外配置。", 12)),
-            Card("Litematica 3D", "v0.6.2 · WinUI 3", Muted("内置 Minecraft 26.2 模型与贴图，无需安装游戏。"),
+            Card("Litematica 3D", $"v{typeof(MainWindow).Assembly.GetName().Version?.ToString(3)} · WinUI 3", Muted("内置 Minecraft 26.2 模型与贴图，无需安装游戏。"),
                 Muted("作者：b站@ZZHaccount", 12))));
     }
 }

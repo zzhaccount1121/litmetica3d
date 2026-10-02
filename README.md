@@ -1,10 +1,10 @@
 # Litematica 3D
 
-## 0.6.2 preview · Windows 原生 WinUI 3
+## 0.6.3 preview · Windows 原生 WinUI 3
 
 Litematica 3D 使用 C# / XAML 工作台并复用 Python 转换引擎，提供批量导入、打印/视觉/渲染/自定义预设、高级参数、进度、取消、日志、报告和主题设置。
 
-下载 [0.6.2 WinUI 便携版](https://github.com/zzhaccount1121/litmetica3d/releases/download/v0.6.2/Litematica3D-WinUI-v0.6.2-win-x64.zip)，完整解压后运行 `Litmetica3D.WinUI.exe`。便携版带有运行所需的 .NET、Python 和 Minecraft 26.2 资源，无需安装 Minecraft。
+下载 [0.6.3 WinUI 便携版](https://github.com/zzhaccount1121/litmetica3d/releases/download/v0.6.3/Litematica3D-WinUI-v0.6.3-win-x64.zip)，完整解压后运行 `Litmetica3D.WinUI.exe`。便携版带有运行所需的 .NET、Python 和 Minecraft 26.2 资源，无需安装 Minecraft。
 
 ```powershell
 .\setup_winui.ps1
@@ -15,7 +15,7 @@ Litematica 3D 使用 C# / XAML 工作台并复用 Python 转换引擎，提供�
 
 > 将 Minecraft Litematica 投影转换为适合 **3D 打印**、**模型预览**和 **Blender 渲染**的 STL / OBJ 模型。
 
-![Version](https://img.shields.io/badge/version-0.6.2--preview-f59e0b)
+![Version](https://img.shields.io/badge/version-0.6.3--preview-f59e0b)
 ![Platform](https://img.shields.io/badge/platform-Windows-2563eb)
 ![Minecraft](https://img.shields.io/badge/Minecraft-26.2-16a34a)
 ![Python](https://img.shields.io/badge/Python-%E2%89%A53.10-3776ab)
@@ -40,7 +40,7 @@ Litematica 3D 可以读取 `.litematic` 文件中的区域、坐标、方块名�
 
 ## 快速下载与使用
 
-1. 下载 [v0.6.2 WinUI 预览版便携包](https://github.com/zzhaccount1121/litmetica3d/releases/download/v0.6.2/Litematica3D-WinUI-v0.6.2-win-x64.zip)。
+1. 下载 [v0.6.3 WinUI 预览版便携包](https://github.com/zzhaccount1121/litmetica3d/releases/download/v0.6.3/Litematica3D-WinUI-v0.6.3-win-x64.zip)。
 2. 完整解压 ZIP，不要直接在压缩软件中运行。
 3. 双击 `Litmetica3D.WinUI.exe`。
 4. 选择一个 `.litematic` 文件和总输出位置；界面会自动按 `L3D_output/投影名/` 分类。
@@ -48,15 +48,17 @@ Litematica 3D 可以读取 `.litematic` 文件中的区域、坐标、方块名�
 6. 点击“开始转换”。
 
 > [!WARNING]
-> v0.6.1 存在已确认的启动崩溃。v0.6.0 在当前测试机可以启动；若你的电脑启动失败，请使用上方的 v0.6.2 便携包。
+> v0.6.1 存在已确认的启动崩溃。v0.6.0 在当前测试机可以启动；若你的电脑启动失败，请使用上方的最新便携包。
 
 WinUI 便携版包含 Python 运行环境、Manifold3D、Pillow、NumPy、.NET/WinUI 运行文件和 Minecraft 26.2 模型资源。复制到另一台 Windows 电脑并完整解压后即可运行。
 
 ## 版本说明
 
-- [0.6.0 合并版说明](RELEASE_NOTES_v0.6.0.md)：旧预览版；启动失败时请使用 0.6.2。
-- [0.6.1 修复版说明](RELEASE_NOTES_v0.6.1.md)：有已确认的启动崩溃，请使用 0.6.2。
+- [0.6.0 合并版说明](RELEASE_NOTES_v0.6.0.md)：旧预览版；启动失败时请使用最新便携包。
+- [0.6.1 修复版说明](RELEASE_NOTES_v0.6.1.md)：有已确认的启动崩溃，请使用最新便携包。
 - [0.6.2 预览版说明](RELEASE_NOTES_v0.6.2.md)。
+- [0.6.3 预览版说明](RELEASE_NOTES_v0.6.3.md)。
+- [Issue #2 逐项核验](ISSUE_2_VERIFICATION.md)。
 
 ## 目录
 
@@ -95,7 +97,7 @@ WinUI 便携版包含 Python 运行环境、Manifold3D、Pillow、NumPy、.NET/W
 | 格式 | STL |
 | 水体 | `drop` |
 | 未知方块 | `ignore` |
-| 面数优化 | `safe` |
+| 模型优化 | 自动执行 |
 | 输出用途 | `print` |
 | 独立壳体 | `main` |
 | 封闭空腔 | `fill` |
@@ -113,7 +115,7 @@ WinUI 便携版包含 Python 运行环境、Manifold3D、Pillow、NumPy、.NET/W
 | 格式 | OBJ |
 | 水体 | `level` |
 | 未知方块 | `ignore` |
-| 面数优化 | `safe` |
+| 模型优化 | 自动执行 |
 | 输出用途 | `visual` |
 | 独立壳体 | `keep` |
 | 封闭空腔 | `preserve` |
@@ -286,7 +288,7 @@ OBJ 材质写入不透明度，同时生成 Blender 配置脚本。请重新转�
 - 设置基础采样和降噪；
 - 在接口兼容时配置可选泛光。
 
-可提供 JSON 发光规则，按方块名称、状态、区域或世界坐标覆盖强度和颜色。
+可提供 JSON 发光规则，按方块名称、状态、区域或投影原始坐标覆盖强度和颜色。`position` 使用 `区域 Position + 区域局部坐标`，在模型移到原点、居中或缩放之前匹配；它不假定游戏世界的绝对原点。报告的 `coordinate_origin` 记录导出时减去的坐标。
 
 ### 壳体与封闭空腔
 
@@ -309,7 +311,7 @@ OBJ 材质写入不透明度，同时生成 Blender 配置脚本。请重新转�
 
 ### 面数优化
 
-视觉和渲染预设导出的 OBJ 会自动进行保形压缩，无需额外勾选，也不受下方后处理等级开关影响：
+视觉和渲染预设导出的 OBJ 会自动进行保形压缩，无需额外勾选：
 
 - 分块复用坐标完全相同的顶点，UV 独立索引，保留贴图接缝。
 - 将轴对齐且 UV 连续的矩形恢复为四边面，减少 Blender 中的多边形和边记录；斜面、旋转面、非连续 UV 仍使用原三角形。
@@ -318,13 +320,7 @@ OBJ 材质写入不透明度，同时生成 Blender 配置脚本。请重新转�
 
 打印模型和 STL 输出不受这项 OBJ 结构优化影响。
 
-| 等级 | 行为 |
-|---|---|
-| `raw` | 不进行后处理 |
-| `safe` | 只执行严格等价的内部面删除和矩形合并 |
-| `experimental` | 允许更积极的合并与修复 |
-
-安全优化只处理能够严格判断的轴对齐矩形，不使用宽松容差删除拉杆、锁链等相近但不重合的表面。
+没有可切换的 `raw/safe/experimental` 等级。打印模式通过实体布尔并集处理内部面；视觉模式自动复用顶点并恢复 UV 连续的矩形。转换报告中的 `optimize_mode=automatic` 表示实际采用的自动流程。
 
 ## 输出文件
 
@@ -444,7 +440,6 @@ litmetica3d building.litematic building.obj --geometry visual --blender-lights m
 |---|---|---|
 | `--water` | `cube/drop/level` | 水体处理 |
 | `--fallback` | `cube/ignore` | 未知方块处理 |
-| `--optimize` | `raw/safe/experimental` | 面数优化 |
 | `--geometry` | `print/visual` | 输出用途 |
 | `--components` | `keep/remove-small/main` | 独立壳体处理 |
 | `--cavities` | `preserve/fill` | 封闭空腔处理 |
@@ -522,7 +517,7 @@ litmetica3d/
 
 转换器按实际选中的模型组合复用局部几何；随机外观仍由原坐标和完整状态决定，不会因为缓存复用而统一朝向或随机样式。视觉网格直接写入平移后的顶点，减少临时面片对象；发光处理只复制需要修改的面片元数据，不修改共享的几何与UV。仅在水位或可编辑灯光需要时建立邻居查询表。
 
-视觉网格按批次检查和写入，维持每块最多8192面的内存边界，减少逐面创建小数组。确定没有方块光级、模型显式发光属性及发光纹理时，跳过不必要的发光计算；坐标发光规则仍保留。多个材质共用同一贴图时，只编码和写出一次，不合并材质，也不增加图像缓存。
+视觉网格按批次检查和写入，每个临时缓冲区最多8192面，减少逐面创建小数组；最终几何仍保存在内存中，总内存会随模型增大。确定没有方块光级、模型显式发光属性及发光纹理时，跳过不必要的发光计算；坐标发光规则仍保留。多个材质共用同一贴图时，只编码和写出一次，不合并材质，也不增加图像缓存。
 
 这些内部优化自动生效，不增加并行进程或扩大网格分块，也不执行额外减面、坐标吸附、贴图替换或透明度近似。它们与下方会改变镂空几何的可选「特殊优化」不同。性能验证同时检查各类模型耗时和峰值内存，不以牺牲某一类模型的明显性能换取平均值。
 

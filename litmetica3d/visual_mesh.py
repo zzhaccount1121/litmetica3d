@@ -142,6 +142,8 @@ class CompactVisualMesh:
             chunk.vertices += offset
             if scale != 1:
                 chunk.vertices *= np.float32(scale)
+            if not np.isfinite(chunk.vertices).all():
+                raise ValueError("缩放后的顶点超出输出格式范围，已停止导出")
         if np.isfinite(self.bounds_min).all():
             self.bounds_min = (self.bounds_min + offset) * scale
             self.bounds_max = (self.bounds_max + offset) * scale

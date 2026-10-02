@@ -7,7 +7,6 @@ Handles the bit-packed block storage format used by Litematica.
 Reference: https://litemapy.readthedocs.io/en/latest/litematics.html
 """
 
-import math
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -98,7 +97,7 @@ def load_schematic(path: str) -> Schematic:
 
 def load_schematic_info(path: str) -> Schematic:
     """Load schematic metadata only (no block data)."""
-    nbt = read_gzip_nbt(path)
+    nbt = read_gzip_nbt(path, skip_names=frozenset({"BlockStates"}))
     return _parse_schematic(nbt, load_blocks=False)
 
 
@@ -127,13 +126,12 @@ def _parse_schematic(nbt: dict[str, Any], load_blocks: bool = True) -> Schematic
     # ── Regions ─────────────────────────────────────────────────────────────
     regions_nbt = nbt.get("Regions", {})
     for region_name, region_data in regions_nbt.items():
-        if load_blocks:
-            schem.regions[region_name] = _parse_region(region_name, region_data)
+        schem.regions[region_name] = _parse_region(region_name, region_data, load_blocks)
 
     return schem
 
 
-def _parse_region(name: str, data: dict[str, Any]) -> Region:
+def _parse_region(name: str, data: dict[str, Any], load_blocks: bool = True) -> Region:
     # Position and Size
     pos = data.get("Position", {})
     position = (pos.get("x", 0), pos.get("y", 0), pos.get("z", 0))
@@ -153,7 +151,7 @@ def _parse_region(name: str, data: dict[str, Any]) -> Region:
 
     # ── Block state bitstream ───────────────────────────────────────────────
     block_states_nbt = data.get("BlockStates", [])
-    blocks = _decode_block_states(block_states_nbt, palette, size)
+    blocks = _decode_block_states(block_states_nbt, palette, size) if load_blocks else {}
 
     # ── Tile entities ───────────────────────────────────────────────────────
     tile_entities = data.get("TileEntities", [])
@@ -184,14 +182,17 @@ def _decode_block_states(
     Iteration order: Y outer → Z middle → X inner.
     index = y * (sx * sz) + z * sx + x
     """
-    if not long_array or not palette:
-        return {}
-
     sx, sy, sz = size
     total_blocks = abs(sx) * abs(sy) * abs(sz)
-
-    # Bits per block – at least 1
-    bits_per_block = max(1, math.ceil(math.log2(len(palette))))
+    if total_blocks == 0:
+        return {}
+    if not palette:
+        raise ValueError("Litematic 方块调色板为空")
+    # Litematica's packed storage has a minimum width of TWO bits.
+    bits_per_block = max(2, (len(palette) - 1).bit_length())
+    required_longs = (total_blocks * bits_per_block + 63) // 64
+    if len(long_array) < required_longs:
+        raise ValueError(f"Litematic 方块位流截断：需要 {required_longs} 个 long，实际 {len(long_array)}")
 
     blocks: dict[tuple[int, int, int], int] = {}
 
@@ -202,6 +203,8 @@ def _decode_block_states(
                 palette_idx = _read_packed_index(
                     long_array, block_index, bits_per_block
                 )
+                if palette_idx >= len(palette):
+                    raise ValueError(f"Litematic 调色板索引越界：方块 {block_index}，索引 {palette_idx}")
 
                 # Normalized coordinates (handle negative sizes)
                 nx = x if sx >= 0 else x + sx + 1

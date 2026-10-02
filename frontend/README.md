@@ -1,8 +1,8 @@
 # Litematica 3D — WinUI 3 前端
 
-界面采用顶部导航和双栏转换工作台：文件与保存位置在左侧，用途选择在右侧。
+界面采用顶部导航和双栏转换工作台：文件与保存位置在左侧，预设集在右侧。
 高级参数分组折叠，仅显示当前用途适用的设置。窄窗口自动改为纵向布局。
-活动页提供结果卡片、实时日志与 JSON 报告；底部转换按钮和进度始终可见。
+日志页提供结果卡片、实时日志与 JSON 报告；底部转换按钮和进度始终可见。
 
 ![新版转换工作台](screenshots/workspace-light.png)
 
@@ -38,8 +38,9 @@ Python 路径留空时优先选择随包环境；文件夹可移动，转换无�
 Windows App SDK 固定为 2.5.1，构建结果自带 .NET 与 Windows App SDK 运行库。
 不能只复制单个 EXE；源码启动还需要仓库中的 Python 引擎、Minecraft 资源与 `.venv`。
 
-Windows 下 `python run_gui.py`、`litmetica3d --gui` 和 `litmetica3d-gui` 也默认启动 WinUI。
-旧界面可显式运行 `python -m litmetica3d.gui_app`；非 Windows 平台仍使用原 Qt 界面。
+Windows 下 `python run_gui.py`、`litmetica3d --gui` 和 `litmetica3d-gui` 优先启动已构建的 WinUI。
+pip 安装的 wheel 不包含 WinUI 程序；未找到该程序时自动使用 Qt，Qt 依赖由 pip 安装。
+Qt 界面可显式运行 `python -m litmetica3d.gui_app`；非 Windows 平台也使用 Qt。
 EXE 接受一个或多个 `.litematic` 路径参数，仅导入列表，不自动开始转换。
 
 可执行文件：
@@ -52,12 +53,17 @@ frontend/Litmetica3D.WinUI/bin/x64/Release/net10.0-windows10.0.26100.0/win-x64/L
 
 - 打印、视觉、渲染预设；修改参数后显示自定义配置。
 - 原生文件/目录选择器，拖放、多选、批量转换。
-- STL/OBJ、打印/视觉、水体、未知方块、优化、比例、居中、STL 二进制/ASCII。
+- STL/OBJ、打印/视觉、水体、未知方块、比例和居中；面数优化自动执行，WinUI 的 STL 固定为二进制。
 - 最小实体厚度、壳体过滤、空腔、并集失败策略。
-- 原版贴图、基础颜色、无缝玻璃、材质/精确/聚类发光及 JSON 发光规则。
+- 视觉用途固定带原版贴图，打印用途不带贴图；半透明无缝玻璃、无发光/材质/精确/聚类发光及 JSON 发光规则。
 - 单投影区域读取及筛选；批量任务存在区域筛选时明确报错，避免误用。
 - 实时进度、耗时、取消、日志、逐文件报告、汇总报告另存为。
 - 系统/浅色/深色主题，输出目录和解释器设置持久化。
+
+STL 的输出用途锁定为打印；贴图与发光仅在视觉 OBJ 时启用。
+独立壳体、封闭空腔、并集失败策略仅打印模式可用，视觉模式灰显。
+选择“不发光”不会移除贴图。JSON 发光规则的 `position` 使用投影原始坐标，
+即区域 Position 加区域局部坐标，不受模型归零、居中或缩放影响。
 - STL 强制打印用途；视觉 OBJ 强制贴图；不适用的控件禁用。
 
 每个投影输出到 `所选目录/L3D_output/投影名/`，其中包含模型、材质、贴图和 Blender 辅助文件；转换报告只显示在“日志”页，需要时可手动另存 JSON。
