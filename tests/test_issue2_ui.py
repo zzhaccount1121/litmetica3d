@@ -47,8 +47,7 @@ def enable_visual(window):
 
 
 def test_versions_layout_and_automatic_optimization(window):
-    assert __version__ == "0.6.3"
-    assert "v0.6.3" in window.windowTitle()
+    assert f"v{__version__}" in window.windowTitle()
     assert not hasattr(window, "optimize_combo")
     assert window._snapshot()["optimize"] == "safe"
     assert window.pages.count() == (3 if isinstance(window, gui_app.MainWindow) else 4)

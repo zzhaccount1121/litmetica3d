@@ -6,7 +6,7 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 from PySide6.QtCore import QSettings
 from PySide6.QtWidgets import QApplication, QAbstractSpinBox
 
-from litmetica3d import gui_app
+from litmetica3d import __version__, gui_app
 from litmetica3d.gui_app import MainWindow, VERSION
 
 
@@ -27,7 +27,7 @@ def test_preset_gui_layout_and_values():
     settings.clear()
     window = MainWindow()
     try:
-        assert VERSION == "0.6.3"
+        assert VERSION == __version__
         assert window.dark_theme is True
         for spin in (
             window.scale_spin, window.thickness_spin,
