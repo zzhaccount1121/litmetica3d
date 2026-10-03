@@ -167,7 +167,9 @@ public sealed partial class MainWindow
         presetLabel.FontSize = 13;
         summary.FontSize = 13;
         summary.LineHeight = 23;
-        var right = Card("预设集", "选择适合用途的配置，也可在下方自定义。", modes, Divider(), presetLabel, summary);
+        summaryScroll.Content = summary;
+        Microsoft.UI.Xaml.Automation.AutomationProperties.SetName(summaryScroll, "完整参数配置，可滚动查看");
+        var right = Card("预设集", "选择适合用途的配置，也可在下方自定义。", modes, Divider(), presetLabel, summaryScroll);
         workspace = new Grid { ColumnSpacing = 20 };
         workspace.ColumnDefinitions.Add(new() { Width = new GridLength(1, GridUnitType.Star) });
         workspace.ColumnDefinitions.Add(new() { Width = new GridLength(340) });
@@ -288,7 +290,9 @@ public sealed partial class MainWindow
                 Number("emission_strength", "发光强度倍率", 1, 0, 1000)),
             Pair(emissionConfig, emissionBrowse), Check("seamless_glass", "半透明无缝玻璃")));
         var regionGroup = Group("区域", "留空为全部区域；筛选仅用于单个投影", regions);
-        regions.TextChanged += (_, _) => Changed(); emissionConfig.TextChanged += (_, _) => Changed();
+        // Observe the actual property even while the advanced expander is collapsed.
+        regions.RegisterPropertyChangedCallback(TextBox.TextProperty, (_, _) => Changed());
+        emissionConfig.RegisterPropertyChangedCallback(TextBox.TextProperty, (_, _) => Changed());
         updating = false;
         return Stack(basic, printGroup, visualGroup, regionGroup);
     }

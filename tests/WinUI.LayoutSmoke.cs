@@ -47,16 +47,42 @@ public sealed partial class MainWindow
 
             presetButtons["visual"].IsChecked = true;
             Check(Value("output_format") == "obj" && Value("geometry") == "visual", "Visual radio changes actual conversion parameters");
-            Check(visualGroup.IsEnabled && !printGroup.IsEnabled && visualGroup.Visibility == Visibility.Visible && printGroup.Visibility == Visibility.Visible,
+            Check(visualGroup.IsEnabled && !choices["components"].IsEnabled && !numbers["minimum_thickness"].IsEnabled && visualGroup.Visibility == Visibility.Visible && printGroup.Visibility == Visibility.Visible,
                 "Print-only and visual controls stay visible while incompatible options are disabled");
             presetButtons["render"].IsChecked = true;
             Check(Value("blender_lights") == "exact" && checks["seamless_glass"].IsChecked == true, "Render preset includes exact lights and seamless glass");
             numbers["scale"].Value = 2;
             Check(presetButtons["custom"].IsChecked == true, "Editing a parameter selects the custom preset");
+            foreach (var combo in choices.Values)
+                Check(summary.Text.Contains(combo.Header.ToString()!), $"Summary includes choice: {combo.Header}");
+            foreach (var number in numbers.Values)
+                Check(summary.Text.Contains(number.Header.ToString()!), $"Summary includes number: {number.Header}");
+            foreach (var (key, check) in checks)
+                Check(summary.Text.Contains(key == "textures" ? "是否带有贴图" : check.Content.ToString()!), $"Summary includes toggle: {key}");
+            Check(summary.Text.Contains("当前不执行") && summary.Text.Contains("转换区域：全部区域"), "Visual summary explains inactive print controls and default regions");
+            regions.Text = string.Join(", ", Enumerable.Range(1, 30).Select(i => $"测试区域-{i}"));
+            emissionConfig.Text = Path.Combine(folder, "自定义规则.json");
+            // TextChanged is dispatched asynchronously by native TextBox controls.
+            await Task.Delay(100);
+            await File.WriteAllTextAsync(Path.Combine(folder, "summary-debug.txt"), $"regions={regions.Text}\nrule={emissionConfig.Text}\nupdating={updating}\n{summary.Text}");
+            Check(summary.Text.Contains("测试区域-30") && summary.Text.Contains("自定义规则.json"), "Summary includes full region list and rule path");
+            var beforeSummary = JsonSerializer.Serialize(Snapshot());
+            Check(BuildConfigurationSummary() == summary.Text, "Displayed configuration stays in sync");
+            Check(beforeSummary == JsonSerializer.Serialize(Snapshot()), "Summary does not modify conversion options");
+            summaryScroll.StartBringIntoView(new BringIntoViewOptions { AnimationDesired = false, VerticalAlignmentRatio = 1 });
+            await Capture("09-custom-summary-top");
+            Check(summaryScroll.ScrollableHeight > 0 && summaryScroll.ViewportHeight > 0 && summaryScroll.ActualHeight == 240,
+                "Full summary has a constrained scrollable viewport");
+            summaryScroll.ChangeView(null, summaryScroll.ScrollableHeight, null, true);
+            await Capture("10-custom-summary-bottom");
+            Check(summaryScroll.VerticalOffset > 0, "Summary can scroll to the final configuration lines");
+            Set("blender_lights", "none");
+            Check(summary.Text.Contains("发光模式：不发光") && summary.Text.Contains("当前不生效"), "No-emission summary identifies inactive light parameters");
             Set("output_format", "stl");
             Check(Value("geometry") == "print" && !choices["geometry"].IsEnabled, "STL remains constrained to print mode");
-            Check(!visualGroup.IsEnabled && !choices["components"].IsEnabled && !choices["cavities"].IsEnabled,
-                "STL/print mode disables visual-only and conflicting print controls");
+            Check(!visualGroup.IsEnabled && choices["components"].IsEnabled && choices["cavities"].IsEnabled,
+                "STL/print mode disables visual-only controls and enables print controls");
+            Check(summary.Text.Contains("是否带有贴图：否") && summary.Text.Contains("打印模式不发光"), "Print summary distinguishes disabled visual values from active settings");
             ApplyPreset("print");
             AddFiles([Path.Combine(folder, "中文 测试.litematic"), Path.Combine(folder, "第二个投影.litematic")]);
             output.Text = folder;

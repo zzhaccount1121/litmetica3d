@@ -29,6 +29,12 @@ public sealed partial class MainWindow : Window
     private readonly TextBox python = new() { Header = "Python 解释器", PlaceholderText = "留空使用内置环境；也可填写 python.exe 的完整路径" };
     private readonly TextBlock presetLabel = new() { FontSize = 18, FontWeight = Microsoft.UI.Text.FontWeights.SemiBold };
     private readonly TextBlock summary = new() { TextWrapping = TextWrapping.Wrap, IsTextSelectionEnabled = true, Opacity = 0.75 };
+    private readonly ScrollViewer summaryScroll = new()
+    {
+        Height = 240, VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
+        VerticalScrollMode = ScrollMode.Enabled, HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled,
+        HorizontalScrollMode = ScrollMode.Disabled, Padding = new Thickness(0, 0, 10, 0),
+    };
     private readonly TextBox log = new() { AcceptsReturn = true, IsReadOnly = true, TextWrapping = TextWrapping.Wrap, MinHeight = 200 };
     private readonly TextBox reportText = new() { AcceptsReturn = true, IsReadOnly = true, TextWrapping = TextWrapping.Wrap, MinHeight = 200 };
     private readonly ListView fileList = new() { SelectionMode = ListViewSelectionMode.Multiple, MinHeight = 110, MaxHeight = 210 };
@@ -186,11 +192,55 @@ public sealed partial class MainWindow : Window
         var emission = visual && Value("blender_lights") != "none";
         numbers["emission_strength"].IsEnabled = emission; emissionConfig.IsEnabled = emission;
         emissionBrowse.IsEnabled = emission;
-        string Label(string key) => ((ComboBoxItem)choices[key].SelectedItem).Content.ToString() ?? "";
-        summary.Text = $"{Value("output_format").ToUpperInvariant()} · {(visual ? "原版贴图" : "封闭实体")}\n" +
-            $"自动优化 · 比例 × {numbers["scale"].Value:g}\n" +
-            (visual ? $"灯光：{Label("blender_lights")}" : $"壳体：{Label("components")}");
+        summary.Text = BuildConfigurationSummary();
         updating = false;
+    }
+
+    private string BuildConfigurationSummary()
+    {
+        var text = new StringBuilder();
+        var visual = Value("geometry") == "visual";
+        var emission = visual && Value("blender_lights") != "none";
+        void Line(object label, string value, string note = "") =>
+            text.Append(label).Append("：").Append(value).AppendLine(note.Length == 0 ? "" : $"（{note}）");
+        string Toggle(CheckBox check) => check.IsChecked == true ? "开启" : "关闭";
+        string NumberValue(NumberBox number) => double.IsFinite(number.Value)
+            ? number.Value.ToString("G", System.Globalization.CultureInfo.InvariantCulture) : "待填写有效数值";
+
+        text.AppendLine("模型与输出");
+        foreach (var (key, combo) in choices.Where(item => item.Key != "blender_lights"))
+        {
+            var label = ((ComboBoxItem)combo.SelectedItem).Content.ToString() ?? "";
+            var note = visual && (key is "components" or "cavities" or "boolean_fallback")
+                ? "仅打印模式生效；当前不执行" : "";
+            Line(combo.Header, label, note);
+        }
+        Line("面数优化", "安全优化（自动）");
+        Line(checks["solid_textures"].Content, Toggle(checks["solid_textures"]), visual ? "" : "仅视觉模式生效");
+
+        text.AppendLine().AppendLine("尺寸与基础选项");
+        foreach (var (key, number) in numbers.Where(item => item.Key != "emission_strength"))
+        {
+            var note = key == "minimum_thickness" && visual ? "仅打印模式生效"
+                : key == "min_component_volume" && (visual || Value("components") != "remove-small")
+                    ? "仅打印模式删除较小壳体时生效" : "";
+            Line(number.Header, NumberValue(number), note);
+        }
+        Line(checks["center"].Content, Toggle(checks["center"]));
+
+        text.AppendLine().AppendLine("视觉与发光");
+        Line("是否带有贴图", visual ? "是" : "否", "由输出用途自动决定");
+        Line(choices["blender_lights"].Header, ((ComboBoxItem)choices["blender_lights"].SelectedItem).Content.ToString() ?? "",
+            visual ? "" : "打印模式不发光");
+        Line(numbers["emission_strength"].Header, NumberValue(numbers["emission_strength"]), emission ? "" : "当前不生效");
+        Line(emissionConfig.Header, string.IsNullOrWhiteSpace(emissionConfig.Text) ? "默认规则" : emissionConfig.Text.Trim(),
+            emission ? "" : "当前不生效");
+        foreach (var (key, check) in checks.Where(item => item.Key is not "textures" and not "center" and not "solid_textures"))
+            Line(check.Content, Toggle(check), visual ? "" : "仅视觉模式生效");
+
+        text.AppendLine().AppendLine("区域");
+        Line("转换区域", string.IsNullOrWhiteSpace(regions.Text) ? "全部区域" : regions.Text.Trim());
+        return text.ToString().TrimEnd();
     }
 
     private void InitializePicker(object picker) => WinRT.Interop.InitializeWithWindow.Initialize(picker, WinRT.Interop.WindowNative.GetWindowHandle(this));
