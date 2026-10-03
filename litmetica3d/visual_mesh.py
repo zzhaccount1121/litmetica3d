@@ -547,4 +547,5 @@ if ENABLE_GLARE:
 
 print("Litematica emission and editable Cycles lights are ready.")
 '''
-    path.write_text(script, encoding="utf-8")
+    from .blender_import import responsive_setup
+    path.write_text(responsive_setup(script), encoding="utf-8")
