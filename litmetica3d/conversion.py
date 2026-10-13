@@ -230,6 +230,7 @@ class ConversionOptions:
     seamless_glass: bool = False
     solid_textures: bool = False
     geometry: str = "print"
+    experimental_entities: bool = False
     components: str = "keep"
     min_component_volume: float = 1 / 4096
     cavities: str = "preserve"
@@ -243,6 +244,10 @@ class ConversionOptions:
 
 def validate_options(options: ConversionOptions) -> None:
     """Shared CLI/API/desktop validation, before opening input or output."""
+    if not isinstance(options.experimental_entities, bool):
+        raise ValueError("experimental_entities 必须是布尔值")
+    if options.experimental_entities and (options.output_format != "obj" or options.geometry != "visual"):
+        raise ValueError("实验性实体渲染仅支持 OBJ＋视觉用途")
     for name in ("scale", "minimum_thickness", "min_component_volume", "emission_strength"):
         value = getattr(options, name)
         if not isinstance(value, (int, float)) or not math.isfinite(value):
@@ -286,6 +291,7 @@ class ConversionReport:
     source_blocks: int = 0
     rendered_blocks: int = 0
     entity_model_blocks: int = 0
+    scene_entities: dict = field(default_factory=dict)
     intentionally_invisible: int = 0
     water_skipped: int = 0
     unknown_blocks: int = 0
@@ -701,6 +707,13 @@ def convert(
             else:
                 offset = tuple(map(float, pos))
                 mesh.add_faces(local_faces, offset=offset)
+
+        if options.experimental_entities:
+            from .scene_entities import append_scene_entities
+            report.scene_entities = append_scene_entities(
+                schematic, selected, minimum, mesh, loader, options,
+                progress, cancelled,
+            )
 
         if options.geometry == "print":
             for box_origin, box_size in greedy_cube_boxes(cube_positions):

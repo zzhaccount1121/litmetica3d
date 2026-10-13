@@ -1083,6 +1083,12 @@ class ModelLoader:
                     **parent_data.get("textures", {}),
                     **data.get("textures", {}),
                 }
+                # Display contexts inherit independently (e.g. handheld keeps
+                # generated.fixed even when it overrides first-person poses).
+                merged["display"] = {
+                    **parent_data.get("display", {}),
+                    **data.get("display", {}),
+                }
                 # elements: use child's if present, otherwise parent's
                 if "elements" not in data and "elements" in parent_data:
                     merged["elements"] = parent_data["elements"]

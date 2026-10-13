@@ -298,7 +298,8 @@ class VisualTextureTests(unittest.TestCase):
         cases = [
             # Chests use their renderer's positive-Y ModelPart UV net instead
             # of the generic inverted-Y entity net; covered in test_chest_uv.
-            ("minecraft:red_shulker_box", {"facing": "up"}),
+            # Shulker inner/rim faces stretch edge pixels in either direction;
+            # their original UV projection is checked in test_shulker_visual.
             ("minecraft:white_banner", {"rotation": "0"}),
             ("minecraft:skeleton_skull", {"rotation": "0"}),
         ]
@@ -321,7 +322,7 @@ class VisualTextureTests(unittest.TestCase):
                 ]
                 self.assertGreater(min(top_v), max(bottom_v), name)
                 checked += 1
-        self.assertGreater(checked, 20)
+        self.assertEqual(checked, 16)  # 12 banner side faces + 4 skull side faces
 
     def test_translucent_obj_writes_alpha_map(self):
         result = self.loader.resolve("minecraft:white_stained_glass", {})

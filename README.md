@@ -1,10 +1,10 @@
 # Litematica 3D
 
-## 0.6.4 preview · Windows 原生 WinUI 3
+## 0.7.0 Beta 1 · Windows 原生 WinUI 3
 
 Litematica 3D 使用 C# / XAML 工作台并复用 Python 转换引擎，提供批量导入、打印/视觉/渲染/自定义预设、高级参数、进度、取消、日志、报告和主题设置。
 
-使用 `Litematica3D-WinUI-v0.6.4-win-x64.zip` 便携包，完整解压后运行 `Litmetica3D.WinUI.exe`。便携版带有运行所需的 .NET、Python 和 Minecraft 26.2 资源，无需安装 Minecraft。已发布的版本可在 [GitHub Releases](https://github.com/zzhaccount1121/litmetica3d/releases) 查找。
+使用 `Litematica3D-WinUI-v0.7.0-beta.1-win-x64.zip` 测试版便携包，完整解压后运行 `Litmetica3D.WinUI.exe`。便携版带有运行所需的 .NET、Python 和 Minecraft 26.2 资源，无需安装 Minecraft。已发布的版本可在 [GitHub Releases](https://github.com/zzhaccount1121/litmetica3d/releases) 查找。Beta 版包含实验性实体功能，不保证复现所有实体属性；请保留原始投影和已验证的旧版输出。
 
 ```powershell
 .\setup_winui.ps1
@@ -15,7 +15,7 @@ Litematica 3D 使用 C# / XAML 工作台并复用 Python 转换引擎，提供�
 
 > 将 Minecraft Litematica 投影转换为适合 **3D 打印**、**模型预览**和 **Blender 渲染**的 STL / OBJ 模型。
 
-![Version](https://img.shields.io/badge/version-0.6.4--preview-f59e0b)
+![Version](https://img.shields.io/badge/version-0.7.0--beta.1-f59e0b)
 ![Platform](https://img.shields.io/badge/platform-Windows-2563eb)
 ![Minecraft](https://img.shields.io/badge/Minecraft-26.2-16a34a)
 ![Python](https://img.shields.io/badge/Python-%E2%89%A53.10-3776ab)
@@ -29,6 +29,7 @@ Litematica 3D 可以读取 `.litematic` 文件中的区域、坐标、方块名�
 - 根据原版 `blockstates` 和方块模型解析朝向、连接、开关、层数等状态。
 - 打印模式执行实体化、布尔并集、壳体与空腔处理，目标是输出无破面的可打印模型。
 - 视觉模式生成 UV、原版贴图、透明像素几何和动态染色，适合 Blender 渲染。
+- 可选的实验性实体渲染可读取投影中保存的矿车、展示框、生物等静态实体；仅 OBJ＋视觉用途可开启。
 - 支持水体 `cube`、`drop`、`level` 三种处理方式。
 - 支持 `none`、`material`、`exact`、`clustered` 四种 Blender 发光模式。
 - 未知方块可回落为立方体，也可以忽略，并在转换报告中记录。
@@ -73,6 +74,8 @@ WinUI 便携版包含 Python 运行环境、Manifold3D、Pillow、NumPy、.NET/W
   - [未知方块回落](#未知方块回落)
   - [打印实体流程](#打印实体流程)
   - [视觉贴图与透明像素](#视觉贴图与透明像素)
+  - [实验性实体渲染](#实验性实体渲染)
+  - [潜影盒模型](#潜影盒模型)
   - [Blender 发光](#blender-发光)
   - [壳体与封闭空腔](#壳体与封闭空腔)
   - [面数优化](#面数优化)
@@ -88,6 +91,61 @@ WinUI 便携版包含 Python 运行环境、Manifold3D、Pillow、NumPy、.NET/W
 - [作者](#作者)
 
 ## 转换模式
+
+### 实验性实体渲染
+
+本节对应 0.7.0 Beta 的实验性功能；旧发布版不包含该选项。
+
+在高级参数的“视觉与发光”中勾选红色的 **实验性功能：渲染实体**。
+此选项默认关闭，只在 **OBJ＋视觉用途** 下可用，包括自定义配置；切换到 STL 或打印用途后会取消勾选并灰显。
+修改开关会切换到自定义预设，配置摘要中会显示实际开关状态。
+
+投影必须保存了 `Entities` 数据。未随投影保存的矿车、生物或展示框无法从方块列表恢复。
+开启后读取实体的区域位置、小数坐标、朝向及支持的变体；与方块共用居中和缩放变换。
+内置资源覆盖 Minecraft 26.2 的 158 个实体注册类型，使用原版静态模型层；矿车内容物、展示框物品、画、部分展示实体和生物变体有对应处理。
+
+**实验性不代表完整复现游戏运行状态。** 不模拟动画、AI、粒子、物理和动态朝向摄像机的效果；无可见表面的交互实体等只记录而不生成实体方块。
+装备、手持物、部分附着姿态及复杂物品/文字展示仍有限制；旧投影的嵌套乘客位置可能使用近似值。相关限制写入报告，不把“能够生成模型”等同于“所有状态外观完全准确”。
+未知或无法处理的实体遵循立方体/忽略策略，并记录实体名称、区域、位置及原因。实体统计位于转换报告的 `scene_entities` 项。
+
+#### 展示框与实体属性范围
+
+展示框按六个安装方向和八档物品旋转生成。物品先读取 `items/*.json` 指向的模型，再应用该模型继承得到的 `display.fixed` 变换，最后应用展示框的缩放。金块等标准方块在展示框中的边长为 0.25 格；平面物品的基准宽高为 0.5 格。不同物品模型自己的展示变换仍然有效，不按物品名称统一缩放或翻转贴图。
+
+读取原始 NBT 不等于所有属性都已变成可见效果。当前范围如下：
+
+| 属性 | 静态输出的处理 |
+| --- | --- |
+| 区域位置、实体坐标 | 应用到几何，与方块统一居中和缩放 |
+| 展示框 Facing、ItemRotation | 应用六朝向和八档旋转，包含地面与天花板 |
+| 生物 Rotation | 应用身体偏航与支持模型的头部俯仰；不是完整动画姿态 |
+| 展示实体 Rotation | 固定朝向应用偏航与俯仰，再应用 transformation；动态 billboard 使用固定近似并报告 |
+| 矿车及内容物 | 车内方块共享保存的偏航、俯仰，DisplayOffset 按原版变换；不模拟轨道插值、新矿车实验性运行时行为及受击摇晃 |
+| 生物变种 | 支持部分资源变种、幼年模型、羊毛颜色、河豚膨胀等；并非所有变种组合 |
+| 马匹、热带鱼 | 马匹斑纹、热带鱼花纹及染色仍有限制，报告中提示 |
+| 装备、手持物、运行时动画 | 尚未完整复现，不能视为游戏画面的逐帧快照 |
+| 未被渲染器使用的字段 | 在报告事件中列出字段名；读取过的字段也不代表其所有子属性均已实现 |
+
+健康、运动、AI 等模拟数据不会写入 OBJ。OBJ 是静态模型，不是用于无损还原实体 NBT 的存档格式。
+
+开发者可用 `scripts/extract_entity_layers.py` 从自行提供的 26.2 客户端和原版依赖目录提取静态模型层，再运行 `scripts/build_entity_assets.py` 打包。Java 只在提取资源时使用，软件运行不依赖 Java 或本地 Minecraft 安装。
+
+命令行示例：
+
+```powershell
+python -m litmetica3d input.litematic output.obj --format obj --geometry visual --experimental-entities
+```
+
+### 潜影盒模型
+
+视觉模式使用原版盒盖和底座的 UV，并按透明轮廓生成外壳。内壁向内保留一像素（1/16 格）的实际厚度，切口带封边，关闭时外侧完整，不依靠共面透明贴图相互遮盖。
+打印用途仍使用原有封闭实体流程。投影没有保存游戏中的临时开盖动画进度，因此普通潜影盒按关闭状态导出；打开状态预览用于检查盒盖旋转、内壁和 UV，不代表自动恢复未保存的动画。
+
+### Cycles 透明穿透
+
+导出的 Blender 设置脚本将 Cycles 的透明穿透次数至少设为 64，并保留用户已经设置的更大值。这样可避免多层玻璃、树叶等透明面耗尽默认穿透次数后，使后方方块呈现黑面或丢失纹理。
+这是 Blender 中的光线路径设置，不修改方块颜色、发光强度或网格。只手动导入 OBJ 而未运行设置脚本时，请在“渲染属性 → 光线路径 → 最大反弹 → 透明”中检查该值；极深的透明叠层可能需要更高的值，也会增加渲染耗时。
+参考 [Blender 光线路径说明](https://docs.blender.org/manual/en/latest/render/cycles/render_settings/light_paths.html)。
 
 ### 打印
 

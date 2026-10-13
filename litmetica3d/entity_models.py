@@ -142,6 +142,9 @@ def _visual_chest(name, props, texture):
 def _shulker(
     name: str, props: dict[str, str], texture: str | None = None
 ) -> list[Face]:
+    if texture is not None:
+        from .shulker_visual import geometry
+        return geometry(texture, props.get('facing', 'up'))
     faces = _box((0, 0, 0, 16, 8, 16), name, texture, (0, 28))
     faces += _box((0, 8, 0, 16, 16, 16), name, texture, (0, 0))
     facing = props.get("facing", "up")

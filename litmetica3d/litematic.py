@@ -50,6 +50,7 @@ class Region:
     palette: list[BlockState]          # indexed by palette index
     blocks: dict[tuple[int, int, int], int]  # (x, y, z) → palette index
     tile_entities: list[dict] = field(default_factory=list)
+    entities: list[dict] = field(default_factory=list)
 
     @property
     def total_blocks(self) -> int:
@@ -97,7 +98,7 @@ def load_schematic(path: str) -> Schematic:
 
 def load_schematic_info(path: str) -> Schematic:
     """Load schematic metadata only (no block data)."""
-    nbt = read_gzip_nbt(path, skip_names=frozenset({"BlockStates"}))
+    nbt = read_gzip_nbt(path, skip_names=frozenset({"BlockStates", "Entities"}))
     return _parse_schematic(nbt, load_blocks=False)
 
 
@@ -163,6 +164,7 @@ def _parse_region(name: str, data: dict[str, Any], load_blocks: bool = True) -> 
         palette=palette,
         blocks=blocks,
         tile_entities=list(tile_entities),
+        entities=list(data.get("Entities", [])) if load_blocks else [],
     )
 
 

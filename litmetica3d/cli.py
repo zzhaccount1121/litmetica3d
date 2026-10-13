@@ -25,6 +25,7 @@ def _parser() -> argparse.ArgumentParser:
     parser.add_argument("--fallback", choices=["cube", "ignore"], default="cube")
     parser.add_argument("--minimum-thickness", type=float, default=1 / 16)
     parser.add_argument("--geometry", choices=["print", "visual"], default="print")
+    parser.add_argument("--experimental-entities", action="store_true", help="实验性：导出投影中保存的实体，仅 OBJ＋视觉用途")
     parser.add_argument(
         "--components", choices=["keep", "remove-small", "main"], default="keep"
     )
@@ -111,6 +112,7 @@ def main(argv: list[str] | None = None) -> int:
                 color=args.color,
                 textures=args.textures,
                 geometry=args.geometry,
+                experimental_entities=args.experimental_entities,
                 components=args.components,
                 min_component_volume=args.min_component_volume,
                 cavities=args.cavities,

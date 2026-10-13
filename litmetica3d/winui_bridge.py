@@ -59,6 +59,7 @@ def run(request, cancelled, send=emit):
     options["textures"] = visual
     if not visual:
         options.update(emission=False, blender_lights="none", color=False, seamless_glass=False)
+        options["experimental_entities"] = False
     elif options.get("blender_lights") == "none":
         options["emission"] = False
     for key in ("asset_path", "emission_config"):

@@ -2,6 +2,7 @@ using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Controls.Primitives;
 using Microsoft.UI.Xaml.Media;
+using System.Reflection;
 
 namespace Litmetica3D.WinUI;
 
@@ -284,11 +285,14 @@ public sealed partial class MainWindow
             Number("min_component_volume", "最小壳体体积", 1.0 / 4096, 0, 1e9),
             Check("center", "模型居中")));
         emissionBrowse = Button("选择 JSON", ChooseEmission);
+        var entities = Check("experimental_entities", "**实验性功能：渲染实体**");
+        entities.Foreground = new SolidColorBrush(Microsoft.UI.Colors.IndianRed);
+        ToolTipService.SetToolTip(entities, "仅 OBJ＋视觉用途可用。导出投影中保存的实体静态模型；保存投影时需包含实体。未知或未支持的实体会在报告中说明。");
         visualGroup = Group("视觉与发光", "视觉模型带原版贴图，打印模式不带贴图与发光", Stack(
             Check("textures", "是否带有贴图（由输出用途自动决定）"),
             Fields(Choice("blender_lights", "发光模式", ("不发光", "none"), ("仅材质", "material"), ("精确灯光", "exact"), ("聚类灯光", "clustered")),
                 Number("emission_strength", "发光强度倍率", 1, 0, 1000)),
-            Pair(emissionConfig, emissionBrowse), Check("seamless_glass", "半透明无缝玻璃")));
+            Pair(emissionConfig, emissionBrowse), Check("seamless_glass", "半透明无缝玻璃"), entities));
         var regionGroup = Group("区域", "留空为全部区域；筛选仅用于单个投影", regions);
         // Observe the actual property even while the advanced expander is collapsed.
         regions.RegisterPropertyChangedCallback(TextBox.TextProperty, (_, _) => Changed());
@@ -361,7 +365,7 @@ public sealed partial class MainWindow
                 Pair(python, Button("保存设置", (_, _) =>
                 { SaveSettings(); ShowNotice("已保存", "应用设置已更新。", InfoBarSeverity.Success); })),
                 Muted("留空即可使用内置环境，无需额外配置。", 12)),
-            Card("Litematica 3D", $"v{typeof(MainWindow).Assembly.GetName().Version?.ToString(3)} · WinUI 3", Muted("内置 Minecraft 26.2 模型与贴图，无需安装游戏。"),
+            Card("Litematica 3D", $"v{typeof(MainWindow).Assembly.GetCustomAttribute<AssemblyInformationalVersionAttribute>()?.InformationalVersion.Split('+')[0]} · WinUI 3", Muted("内置 Minecraft 26.2 模型与贴图，无需安装游戏。"),
                 Muted("作者：b站@ZZHaccount", 12))));
     }
 }

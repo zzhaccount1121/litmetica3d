@@ -18,4 +18,6 @@ def test_generated_import_is_batched_and_cancellable(tmp_path):
     assert 'flush=True' in script
     assert '@lru_cache(maxsize=1)' in script
     assert 'for input_socket in (glare.inputs' in script
+    assert 'TRANSPARENT_BOUNCES = 64' in script
+    assert 'max(scene.cycles.transparent_max_bounces, TRANSPARENT_BOUNCES)' in script
 

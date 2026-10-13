@@ -181,6 +181,8 @@ public sealed partial class MainWindow : Window
         choices["geometry"].IsEnabled = !stl;
         var visual = !stl && Value("geometry") == "visual";
         visualGroup.IsEnabled = visual;
+        checks["experimental_entities"].IsEnabled = visual;
+        if (!visual) checks["experimental_entities"].IsChecked = false;
         numbers["minimum_thickness"].IsEnabled = !visual;
         foreach (var key in new[] { "components", "cavities", "boolean_fallback" })
             choices[key].IsEnabled = !visual;
@@ -336,6 +338,7 @@ public sealed partial class MainWindow : Window
         options["optimize"] = "safe";
         options["color"] = false;
         options["solid_textures"] = visual && checks["solid_textures"].IsChecked == true;
+        options["experimental_entities"] = visual && Value("output_format") == "obj" && checks["experimental_entities"].IsChecked == true;
         if (visual)
         {
             options["components"] = "keep";

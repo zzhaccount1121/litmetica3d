@@ -43,10 +43,16 @@ public sealed partial class MainWindow
             Root.RequestedTheme = ElementTheme.Light;
             Check(!StartButton.IsEnabled && !advancedOptions.IsExpanded, "Empty state is safe and advanced options are collapsed");
             Check(Value("geometry") == "print" && presetButtons["print"].IsChecked == true, "Default print preset selected");
+            Check(!checks["experimental_entities"].IsEnabled && checks["experimental_entities"].IsChecked != true,
+                "Experimental entities are default-off and locked in print mode");
             await Capture("01-workspace-light");
 
             presetButtons["visual"].IsChecked = true;
             Check(Value("output_format") == "obj" && Value("geometry") == "visual", "Visual radio changes actual conversion parameters");
+            Check(checks["experimental_entities"].IsEnabled, "Visual OBJ unlocks experimental entities");
+            checks["experimental_entities"].IsChecked = true;
+            Check(presetButtons["custom"].IsChecked == true && (bool)Snapshot()["experimental_entities"],
+                "Entity toggle switches to custom and reaches engine options");
             Check(visualGroup.IsEnabled && !choices["components"].IsEnabled && !numbers["minimum_thickness"].IsEnabled && visualGroup.Visibility == Visibility.Visible && printGroup.Visibility == Visibility.Visible,
                 "Print-only and visual controls stay visible while incompatible options are disabled");
             presetButtons["render"].IsChecked = true;
@@ -80,6 +86,8 @@ public sealed partial class MainWindow
             Check(summary.Text.Contains("发光模式：不发光") && summary.Text.Contains("当前不生效"), "No-emission summary identifies inactive light parameters");
             Set("output_format", "stl");
             Check(Value("geometry") == "print" && !choices["geometry"].IsEnabled, "STL remains constrained to print mode");
+            Check(!checks["experimental_entities"].IsEnabled && checks["experimental_entities"].IsChecked != true
+                && !(bool)Snapshot()["experimental_entities"], "STL clears and locks entity rendering");
             Check(!visualGroup.IsEnabled && choices["components"].IsEnabled && choices["cavities"].IsEnabled,
                 "STL/print mode disables visual-only controls and enables print controls");
             Check(summary.Text.Contains("是否带有贴图：否") && summary.Text.Contains("打印模式不发光"), "Print summary distinguishes disabled visual values from active settings");
@@ -104,6 +112,10 @@ public sealed partial class MainWindow
             await Task.Delay(280);
             advancedOptions.StartBringIntoView(new BringIntoViewOptions { AnimationDesired = false, VerticalAlignmentRatio = 0 });
             await Capture("04-advanced");
+            ((Expander)visualGroup).IsExpanded = true;
+            await Task.Delay(200);
+            checks["experimental_entities"].StartBringIntoView(new BringIntoViewOptions { AnimationDesired = false, VerticalAlignmentRatio = .7 });
+            await Capture("11-experimental-entities");
             NavigateTo(1); NavigateTo(2); NavigateTo(0);
             await Task.Delay(200);
             Check(visiblePage == 0 && pages[0].Visibility == Visibility.Visible && pages[1].Visibility == Visibility.Collapsed, "Rapid navigation shows only the latest selected page");

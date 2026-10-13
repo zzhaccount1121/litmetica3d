@@ -43,6 +43,9 @@ version = {attr = "litmetica3d.__version__"}
 
 [tool.setuptools.package-data]
 litmetica3d = [
+    "data/*.json",
+    "mc_assets/*.zip",
+    "mc_assets/26.2/**/*.gz",
     "mc_assets/26.2/**/*.json",
     "mc_assets/26.2/**/*.png",
     "mc_assets/26.2/**/*.mcmeta",

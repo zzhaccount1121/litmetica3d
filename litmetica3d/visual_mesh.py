@@ -353,6 +353,10 @@ GLOBAL_STRENGTH = 1.0
 CREATE_EDITABLE_LIGHTS = True
 RESET_EXISTING_LIGHTS = False
 ENABLE_GLARE = True
+# Transparent rays have a separate Cycles budget. The default 8 can turn
+# opaque block tops black behind layered glass/leaves. Do not lower a user's
+# larger setting; this affects ray tracing only, never the exported geometry.
+TRANSPARENT_BOUNCES = 64
 OBJ_FORWARD_AXIS = "-Z"
 OBJ_UP_AXIS = "Y"
 
@@ -360,6 +364,7 @@ scene = bpy.context.scene
 scene.render.engine = "CYCLES"
 scene.cycles.use_denoising = True
 scene.cycles.samples = max(scene.cycles.samples, 128)
+scene.cycles.transparent_max_bounces = max(scene.cycles.transparent_max_bounces, TRANSPARENT_BOUNCES)
 OBJ_TO_BLENDER = axis_conversion(
     from_forward=OBJ_FORWARD_AXIS,
     from_up=OBJ_UP_AXIS,
