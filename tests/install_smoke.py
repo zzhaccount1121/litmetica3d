@@ -1,6 +1,7 @@
 """Build/install a wheel and an editable checkout in separate clean environments.
 
-Run with a Python 3.10+ interpreter with pip, for example:
+Run with a Python 3.10+ interpreter with pip and packaging, for example:
+    python -m pip install packaging
     python tests/install_smoke.py --work-dir <directory-outside-the-checkout>
 No build-isolation bypass or --no-deps install is used. GUI routing is mocked;
 this is not an interactive Qt/WinUI or cross-platform GUI certification.
@@ -30,11 +31,14 @@ import litmetica3d
 from litmetica3d import cli, desktop, gui_app
 from litmetica3d.conversion import bundled_asset_path
 from litmetica3d.model_loader import ModelLoader
+from litmetica3d.entity_assets import EntityAssets
 
 source, expected, mode = Path(sys.argv[1]).resolve(), sys.argv[2], sys.argv[3]
+expected_metadata = sys.argv[4]
 package = Path(litmetica3d.__file__).resolve()
 assert litmetica3d.__version__ == expected
-assert metadata.version('litmetica3d') == expected
+installed_version = metadata.version('litmetica3d')
+assert installed_version == expected_metadata, (installed_version, expected_metadata)
 if mode == 'wheel':
     assert source not in package.parents, (source, package)
     assert Path(sys.prefix).resolve() in package.parents, package
@@ -60,11 +64,18 @@ try:
     assert loader.block_count >= 1100, loader.block_count
     stone = loader.resolve('minecraft:stone', {}, (0, 0, 0))
     assert stone.status == 'ok' and stone.faces, stone
+    entities = EntityAssets(loader)
+    try:
+        assert entities.layers and entities.textures
+        entity_layers = len(entities.layers)
+    finally:
+        entities.close()
     count = loader.block_count
 finally:
     loader.close()
 print(json.dumps({'mode': mode, 'version': expected, 'package': str(package),
                   'assets': str(asset_path), 'blockstates': count,
+                  'metadata_version': installed_version, 'entity_layers': entity_layers,
                   'gui': 'Qt routing mocked; real Qt import passed'}, ensure_ascii=False))
 '''
 
@@ -77,6 +88,13 @@ def package_version(source):
                 for target in node.targets):
             return ast.literal_eval(node.value)
     raise RuntimeError('No literal package version found')
+
+
+def distribution_version(version):
+    # Keep packaging a test-runner dependency, not an application dependency.
+    # Lazy import also keeps the WinUI job's write_fixture usable with pip alone.
+    from packaging.version import Version
+    return str(Version(version))
 
 
 def write_fixture(path):
@@ -108,7 +126,7 @@ def inspect_wheel(wheel, source, version):
     asset_root = source / 'litmetica3d/mc_assets/26.2'
     expected = {
         path.relative_to(source).as_posix() for path in asset_root.rglob('*')
-        if path.is_file() and path.suffix in {'.json', '.png', '.mcmeta'}
+        if path.is_file() and path.suffix in {'.json', '.png', '.mcmeta', '.gz'}
     }
     if not expected:
         raise AssertionError('Source asset inventory is empty')
@@ -121,12 +139,14 @@ def inspect_wheel(wheel, source, version):
         assert len(metadata_names) == 1, metadata_names
         info = BytesParser().parsebytes(archive.read(metadata_names[0]))
         assert info['Name'] == 'litmetica3d'
-        assert info['Version'] == version
+        expected_metadata = distribution_version(version)
+        assert info['Version'] == expected_metadata, (info['Version'], expected_metadata)
         assert info['Requires-Python'] == '>=3.10'
         assert any(dep.startswith('PySide6') for dep in info.get_all('Requires-Dist', []))
         forbidden = ('tests/', 'frontend/', 'scripts/', 'work/', 'build/')
         assert not any(name.startswith(forbidden) for name in names)
-    return {'wheel': wheel.name, 'version': version, 'bundled_assets': len(expected)}
+    return {'wheel': wheel.name, 'version': version,
+            'metadata_version': info['Version'], 'bundled_assets': len(expected)}
 
 
 def check(source, work):
@@ -190,7 +210,7 @@ def check(source, work):
         # -I suppresses user-site and environment imports. The working directory
         # is deliberately not the source checkout for every probe and CLI call.
         probe = run(f'{mode}-imports-resources-gui', python, '-I', '-c', PROBE,
-                    source, version, mode)
+                    source, version, mode, distribution_version(version))
         summary['installations'].append(json.loads(probe))
         expected_version = f'litmetica3d {version}'
         assert run(f'{mode}-module-version', python, '-I', '-m', 'litmetica3d',
