@@ -16,6 +16,29 @@ def hollow_cube(size, cavity_size, origin=(0, 0, 0)):
 
 
 class Issue2CavityTests(unittest.TestCase):
+    def test_main_ranks_material_before_filling(self):
+        source = hollow_cube(10, 9) + m3d.Manifold.cube((7, 7, 7)).translate((12, 0, 0))
+        for cavity in ("fill", "preserve"):
+            result, report = self.process(source, cavity, "main")
+            self.assertAlmostEqual(343, result.volume())
+            self.assertAlmostEqual(343, report.main_component_volume)
+            self.assertAlmostEqual(271, report.removed_component_volume)
+
+    def test_unknown_cavity_owner_only_blocks_dependent_decisions(self):
+        source = hollow_cube(10, 9) + m3d.Manifold.cube().translate((12, 0, 0))
+        from litmetica3d.solid import _split_mesh_shells
+        mesh = source.to_mesh()
+        shells, _ = _split_mesh_shells(mesh.vert_properties[:, :3], mesh.tri_verts)
+        cavity_id = next(s.shell_id for s in shells if s.volume < 0)
+        possible = {s.shell_id for s in shells if s.volume > 0}
+        with patch("litmetica3d.solid._cavity_owners", return_value=({}, {cavity_id: possible})):
+            result, report = self.process(source, "fill", "main")
+            self.assertAlmostEqual(1000, result.volume())
+            self.assertIsNone(report.filled_cavity_volume)
+            self.assertEqual(1, len(report.unassigned_cavities))
+            with self.assertRaisesRegex(ValueError, "无法安全保留内壁"):
+                self.process(source, "preserve", "main")
+
     def process(self, source, cavity, component, threshold=0):
         report = SolidReport()
         result, vertices, triangles = process_components_and_cavities(

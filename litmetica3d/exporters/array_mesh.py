@@ -61,12 +61,12 @@ def _export_ascii_stl(vertices, triangles, path, batch_size):
                     f"  facet normal {normal[0]:.6e} {normal[1]:.6e} "
                     f"{normal[2]:.6e}\n",
                     "    outer loop\n",
-                    f"      vertex {triangle[0,0]:.6e} "
-                    f"{triangle[0,1]:.6e} {triangle[0,2]:.6e}\n",
-                    f"      vertex {triangle[1,0]:.6e} "
-                    f"{triangle[1,1]:.6e} {triangle[1,2]:.6e}\n",
-                    f"      vertex {triangle[2,0]:.6e} "
-                    f"{triangle[2,1]:.6e} {triangle[2,2]:.6e}\n",
+                    f"      vertex {triangle[0,0]:.9g} "
+                    f"{triangle[0,1]:.9g} {triangle[0,2]:.9g}\n",
+                    f"      vertex {triangle[1,0]:.9g} "
+                    f"{triangle[1,1]:.9g} {triangle[1,2]:.9g}\n",
+                    f"      vertex {triangle[2,0]:.9g} "
+                    f"{triangle[2,1]:.9g} {triangle[2,2]:.9g}\n",
                     "    endloop\n",
                     "  endfacet\n",
                 ))

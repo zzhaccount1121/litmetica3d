@@ -13,6 +13,7 @@ from litmetica3d.solid import (
     BooleanCancelled, SolidReport, cube_solid, manifold_from_closed_faces,
     process_components_and_cavities,
     union_balanced,
+    validate_manifold,
 )
 
 
@@ -83,7 +84,7 @@ class SolidPipelineTests(unittest.TestCase):
         self.assertAlmostEqual(26.0, preserved.volume(), places=5)
         self.assertEqual(1, preserve_report.retained_component_count)
         self.assertEqual(1, preserve_report.removed_components)
-        self.assertAlmostEqual(27.0, preserve_report.main_component_volume)
+        self.assertAlmostEqual(26.0, preserve_report.main_component_volume)
 
         fill_report = SolidReport()
         filled = process_components_and_cavities(
@@ -105,6 +106,29 @@ class SolidPipelineTests(unittest.TestCase):
             chosen_bounds.append(report.main_component_bounds)
         self.assertEqual(chosen_bounds[0], chosen_bounds[1])
         self.assertEqual(-3.0, chosen_bounds[0][0])
+
+    def test_export_validation_rejects_edge_and_point_contacts(self):
+        for origin, edges, vertices in [((1, 1, 0), 1, None), ((1, 1, 1), 0, 1)]:
+            with self.subTest(origin=origin):
+                solid = m3d.Manifold.cube() + m3d.Manifold.cube().translate(origin)
+                mesh = solid.to_mesh()
+                report = SolidReport()
+                validate_manifold(solid, report, mesh.vert_properties[:, :3], mesh.tri_verts)
+                self.assertEqual(m3d.Error.NoError, solid.status())
+                self.assertEqual(edges, report.nonmanifold_edges)
+                self.assertEqual(vertices, report.nonmanifold_vertices)
+                self.assertIsNone(report.self_intersections)
+                self.assertFalse(report.printable)
+
+    def test_export_validation_rejects_output_precision_collapse(self):
+        solid = m3d.Manifold.cube()
+        mesh = solid.to_mesh()
+        vertices = mesh.vert_properties[:, :3].copy()
+        vertices[:, 0] = 600 + vertices[:, 0] * 1e-6
+        report = SolidReport()
+        validate_manifold(solid, report, vertices, mesh.tri_verts)
+        self.assertGreater(report.degenerate_triangles, 0)
+        self.assertFalse(report.printable)
 
     def test_numpy_binary_stl_layout(self):
         vertices = np.asarray(

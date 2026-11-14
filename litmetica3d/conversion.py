@@ -820,9 +820,6 @@ def convert(
                 report=solid_report,
                 return_mesh=True,
             )
-            validate_manifold(solid, solid_report)
-            if not solid_report.printable:
-                raise ValueError("打印实体未通过流形检查，已停止导出")
             if options.center and len(print_vertices):
                 low = print_vertices.min(axis=0)
                 high = print_vertices.max(axis=0)
@@ -832,8 +829,20 @@ def convert(
             if options.scale != 1:
                 print_vertices = print_vertices * options.scale
             import numpy as np
+            print_vertices = print_vertices.astype(np.float32, copy=False)
             if not np.isfinite(print_vertices).all():
                 raise ValueError("缩放后的顶点超出输出格式范围，已停止导出")
+            progress("solid", 0.91, "正在验证输出坐标的共享边和三角形面积...")
+            validate_manifold(solid, solid_report, print_vertices, print_triangles)
+            if not solid_report.printable:
+                raise ValueError(
+                    "打印网格未通过导出检查。"
+                    f"开放边 {solid_report.open_edges}，非流形边 {solid_report.nonmanifold_edges}，"
+                    f"非流形顶点 {solid_report.nonmanifold_vertices if solid_report.nonmanifold_vertices is not None else '未检查'}，"
+                    f"方向冲突 {solid_report.orientation_conflicts}，"
+                    f"退化三角形 {solid_report.degenerate_triangles}。"
+                    "请检查方块或部件的点、棱接触及过薄细节。"
+                )
             progress(
                 "solid", 0.915,
                 f"实体检查完成：{solid_report.component_count} 个独立壳体，"

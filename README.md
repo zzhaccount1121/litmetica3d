@@ -1,10 +1,10 @@
 # Litematica 3D
 
-## 0.7.0 Beta 1 · Windows 原生 WinUI 3
+## 0.7.0 Beta 2 · Windows 原生 WinUI 3
 
 Litematica 3D 使用 C# / XAML 工作台并复用 Python 转换引擎，提供批量导入、打印/视觉/渲染/自定义预设、高级参数、进度、取消、日志、报告和主题设置。
 
-使用 `Litematica3D-WinUI-v0.7.0-beta.1-win-x64.zip` 测试版便携包，完整解压后运行 `Litmetica3D.WinUI.exe`。便携版带有运行所需的 .NET、Python 和 Minecraft 26.2 资源，无需安装 Minecraft。已发布的版本可在 [GitHub Releases](https://github.com/zzhaccount1121/litmetica3d/releases) 查找。Beta 版包含实验性实体功能，不保证复现所有实体属性；请保留原始投影和已验证的旧版输出。
+使用 `Litematica3D-WinUI-v0.7.0-beta.2-win-x64.zip` 测试版便携包，完整解压后运行 `Litmetica3D.WinUI.exe`。便携版带有运行所需的 .NET、Python 和 Minecraft 26.2 资源，无需安装 Minecraft。已发布的版本可在 [GitHub Releases](https://github.com/zzhaccount1121/litmetica3d/releases) 查找。
 
 ```powershell
 .\setup_winui.ps1
@@ -15,7 +15,7 @@ Litematica 3D 使用 C# / XAML 工作台并复用 Python 转换引擎，提供�
 
 > 将 Minecraft Litematica 投影转换为适合 **3D 打印**、**模型预览**和 **Blender 渲染**的 STL / OBJ 模型。
 
-![Version](https://img.shields.io/badge/version-0.7.0--beta.1-f59e0b)
+![Version](https://img.shields.io/badge/version-0.7.0--beta.2-f59e0b)
 ![Platform](https://img.shields.io/badge/platform-Windows-2563eb)
 ![Minecraft](https://img.shields.io/badge/Minecraft-26.2-16a34a)
 ![Python](https://img.shields.io/badge/Python-%E2%89%A53.10-3776ab)

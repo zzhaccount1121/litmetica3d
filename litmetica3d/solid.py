@@ -30,20 +30,22 @@ class SolidReport:
     voxel_fallbacks: int = 0
     component_count: int = 0
     removed_components: int = 0
-    removed_component_volume: float = 0.0
+    removed_component_volume: float | None = 0.0
     retained_component_count: int = 0
-    main_component_volume: float = 0.0
+    main_component_volume: float | None = 0.0
     main_component_bounds: tuple[float, float, float, float, float, float] | None = None
     cavity_count: int = 0
     cavities: list[CavityInfo] = field(default_factory=list)
     volume_before_cavity_fill: float = 0.0
     volume_after_cavity_fill: float = 0.0
-    filled_cavity_volume: float = 0.0
+    filled_cavity_volume: float | None = 0.0
+    unassigned_cavities: list[CavityInfo] = field(default_factory=list)
     open_edges: int = 0
     nonmanifold_edges: int = 0
     orientation_conflicts: int = 0
     degenerate_triangles: int = 0
-    self_intersections: int = 0
+    nonmanifold_vertices: int | None = None
+    self_intersections: int | None = None
     printable: bool = False
 
 
@@ -235,7 +237,12 @@ def union_balanced(
     progress: Callable[[int, int, int, int], None] | None = None,
     cancelled: Callable[[], bool] | None = None,
 ) -> m3d.Manifold:
-    current = [part for part in parts if not part.is_empty()]
+    current = []
+    for part in parts:
+        if not part.is_empty():
+            current.append(part)
+        elif part.status() != m3d.Error.NoError:
+            raise ValueError(f"invalid boolean input: {part.status()}")
     if not current:
         return m3d.Manifold()
     if batch_size is None:
@@ -308,8 +315,12 @@ def process_components_and_cavities(
     vertices = np.asarray(source_mesh.vert_properties[:, :3])
     triangles = np.asarray(source_mesh.tri_verts, dtype=np.uint32)
     shells, triangle_shell_ids = _split_mesh_shells(vertices, triangles)
-    positives = [shell for shell in shells if shell.volume >= 0]
+    if any(not np.isfinite(shell.volume) or shell.volume == 0 for shell in shells):
+        raise ValueError("布尔结果包含体积为零或无效的边界壳体")
+    positives = [shell for shell in shells if shell.volume > 0]
     negatives = [shell for shell in shells if shell.volume < 0]
+    if negatives and not positives:
+        raise ValueError("布尔结果包含空腔内壁，但没有正向外壳")
     report.component_count = len(positives)
     report.cavity_count = len(negatives)
     report.cavities = [
@@ -317,25 +328,77 @@ def process_components_and_cavities(
     ]
     report.volume_before_cavity_fill = sum(shell.volume for shell in shells)
 
-    all_positives = positives
     removed = []
     positive_solids: dict[int, m3d.Manifold] = {}
+    owners = {}
+    unresolved = {}
+    upper = {shell.shell_id: shell.volume for shell in positives}
+    lower = upper.copy()
+    if negatives and len(positives) > 1 and components != "keep":
+        owners, unresolved = _cavity_owners(
+            positives=positives, cavities=negatives, vertices=vertices,
+            triangles=triangles, triangle_shell_ids=triangle_shell_ids,
+            positive_solids=positive_solids,
+        )
+        for cavity in negatives:
+            owner = owners.get(cavity.shell_id)
+            if owner is not None:
+                upper[owner] += cavity.volume
+                lower[owner] += cavity.volume
+            else:
+                report.unassigned_cavities.append(CavityInfo(-cavity.volume, cavity.bounds))
+                for possible in unresolved[cavity.shell_id]:
+                    lower[possible] += cavity.volume
+    elif len(positives) == 1:
+        owner = positives[0].shell_id
+        if negatives and components == "remove-small":
+            owners, unresolved = _cavity_owners(
+                positives=positives, cavities=negatives, vertices=vertices,
+                triangles=triangles, triangle_shell_ids=triangle_shell_ids,
+                positive_solids=positive_solids,
+            )
+            for cavity in negatives:
+                lower[owner] += cavity.volume
+                if cavity.shell_id in owners:
+                    upper[owner] += cavity.volume
+                else:
+                    report.unassigned_cavities.append(CavityInfo(-cavity.volume, cavity.bounds))
+        elif components == "main":
+            # No ownership decision is needed to choose the sole component.
+            upper[owner] += sum(shell.volume for shell in negatives)
+            lower[owner] = upper[owner]
+
+    def ownership_error(reason):
+        first = report.unassigned_cavities[0]
+        return ValueError(f"{reason}。未确定归属的空腔 {len(unresolved)} 个，"
+                          f"首个包围盒 {first.bounds}，体积 {first.volume:.9g}")
+
     if components == "main" and positives:
         selected_main = min(
             positives,
             key=lambda shell: (
-                -shell.volume, shell.bounds, shell.min_triangle
+                -upper[shell.shell_id], shell.bounds, shell.min_triangle
             ),
         )
+        if len(positives) > 1 and unresolved and any(
+            lower[selected_main.shell_id] <= upper[shell.shell_id]
+            for shell in positives if shell is not selected_main
+        ):
+            raise ownership_error("空腔归属不明确，无法可靠判断最大材料体积")
         removed = [shell for shell in positives if shell is not selected_main]
         positives = [selected_main]
-        report.main_component_volume = selected_main.volume
+        if lower[selected_main.shell_id] == upper[selected_main.shell_id]:
+            report.main_component_volume = upper[selected_main.shell_id]
+        else:
+            report.main_component_volume = None
         report.main_component_bounds = selected_main.bounds
 
     if components == "remove-small":
         kept = []
         for shell in positives:
-            if shell.volume < min_component_volume:
+            if lower[shell.shell_id] < min_component_volume <= upper[shell.shell_id]:
+                raise ownership_error("空腔归属不明确，无法可靠判断是否低于壳体阈值")
+            if upper[shell.shell_id] < min_component_volume:
                 removed.append(shell)
             else:
                 kept.append(shell)
@@ -343,19 +406,20 @@ def process_components_and_cavities(
 
     if removed:
         removed_ids = {shell.shell_id for shell in removed}
-        if positives and negatives:
-            owners = _cavity_owners(
-                positives=all_positives, cavities=negatives,
-                vertices=vertices, triangles=triangles,
-                triangle_shell_ids=triangle_shell_ids,
-                positive_solids=positive_solids,
-            )
-            removed_cavities = [
-                cavity for cavity in negatives
-                if owners[cavity.shell_id] in removed_ids
-            ]
-        else:
-            removed_cavities = negatives
+        removed_cavities = []
+        uncertain_volume = False
+        for cavity in negatives:
+            owner = owners.get(cavity.shell_id)
+            if not positives or owner in removed_ids:
+                removed_cavities.append(cavity)
+            elif owner is None:
+                possible = unresolved[cavity.shell_id]
+                if possible and possible <= removed_ids:
+                    removed_cavities.append(cavity)
+                elif possible & removed_ids:
+                    if cavities == "preserve":
+                        raise ownership_error("空腔归属不明确，无法安全保留内壁")
+                    uncertain_volume = True
         removed_cavity_ids = {shell.shell_id for shell in removed_cavities}
         negatives = [
             cavity for cavity in negatives
@@ -364,7 +428,7 @@ def process_components_and_cavities(
         report.removed_components += len(removed)
         # A removed hollow component contains less material than its outer
         # boundary's volume. Its owned (negative) boundaries travel with it.
-        report.removed_component_volume += sum(
+        report.removed_component_volume = None if uncertain_volume else sum(
             shell.volume for shell in [*removed, *removed_cavities]
         )
 
@@ -393,7 +457,7 @@ def process_components_and_cavities(
         report.volume_after_cavity_fill = result.volume()
         # Filling adds only previously empty space in retained components,
         # not volume deleted by policy or already occupied by nested islands.
-        report.filled_cavity_volume = max(
+        report.filled_cavity_volume = None if report.removed_component_volume is None else max(
             0.0, report.volume_after_cavity_fill - retained_material_volume
         )
         if return_mesh:
@@ -528,7 +592,8 @@ def _manifold_from_selected_triangles(
     if result.status() != m3d.Error.NoError:
         raise ValueError(f"shell filtering produced invalid solid: {result.status()}")
     if return_mesh:
-        return result, compact_vertices, compact_triangles
+        rebuilt = result.to_mesh()
+        return result, rebuilt.vert_properties[:, :3].copy(), rebuilt.tri_verts.copy()
     return result
 
 
@@ -540,7 +605,7 @@ def _cavity_owners(
     triangles: np.ndarray,
     triangle_shell_ids: np.ndarray,
     positive_solids: dict[int, m3d.Manifold],
-) -> dict[int, int]:
+) -> tuple[dict[int, int], dict[int, set[int]]]:
     """Assign cavities to the smallest geometrically containing boundary.
 
     AABBs are only a broad phase: a concave or toroidal component can have a
@@ -548,7 +613,7 @@ def _cavity_owners(
     form positive solids, allowing exact containment via Boolean difference.
     """
     if not cavities:
-        return {}
+        return {}, {}
     bounds = np.asarray([shell.bounds for shell in positives])
     volumes = np.asarray([shell.volume for shell in positives])
     min_triangles = np.asarray(
@@ -559,7 +624,7 @@ def _cavity_owners(
     for shell_index, shell_bounds in enumerate(bounds):
         low = np.floor(shell_bounds[:3] / cell_size).astype(int)
         high = np.floor(
-            (shell_bounds[3:] - 1e-9) / cell_size
+            shell_bounds[3:] / cell_size
         ).astype(int)
         for x in range(low[0], high[0] + 1):
             for y in range(low[1], high[1] + 1):
@@ -568,6 +633,9 @@ def _cavity_owners(
                         shell_index
                     )
     owners = {}
+    unresolved = {}
+    order = np.argsort(triangle_shell_ids, kind="stable")
+    offsets = np.r_[0, np.cumsum(np.bincount(triangle_shell_ids))]
     for cavity in cavities:
         cavity_bounds = np.asarray(cavity.bounds)
         center = (cavity_bounds[:3] + cavity_bounds[3:]) * 0.5
@@ -591,7 +659,8 @@ def _cavity_owners(
                 min_triangles[candidates],
                 volumes[candidates],
             ))
-            cavity_triangles = triangles[triangle_shell_ids == cavity.shell_id]
+            start, end = offsets[cavity.shell_id:cavity.shell_id + 2]
+            cavity_triangles = triangles[order[start:end]]
             cavity_solid = _manifold_from_selected_triangles(
                 vertices, cavity_triangles[:, (0, 2, 1)]
             )
@@ -604,14 +673,18 @@ def _cavity_owners(
                     )
                 outside = cavity_solid - positive_solids[candidate.shell_id]
                 if outside.status() != m3d.Error.NoError:
-                    raise ValueError(f"cavity containment failed: {outside.status()}")
+                    break
                 if outside.is_empty():
                     owner = candidate.shell_id
                     break
         if owner is None:
-            raise ValueError("closed cavity has no geometrically containing component")
-        owners[cavity.shell_id] = owner
-    return owners
+            # If broad-phase found no candidate, no material-volume ranking
+            # can assume which part loses this volume.
+            indices = candidates if len(candidates) else range(len(positives))
+            unresolved[cavity.shell_id] = {positives[i].shell_id for i in indices}
+        else:
+            owners[cavity.shell_id] = owner
+    return owners, unresolved
 
 
 def manifold_to_mesh(solid: m3d.Manifold) -> Mesh:
@@ -639,15 +712,60 @@ def manifold_to_mesh(solid: m3d.Manifold) -> Mesh:
     return mesh
 
 
-def validate_manifold(solid: m3d.Manifold, report: SolidReport) -> None:
-    # A successful Manifold is an oriented 2-manifold by construction.
-    report.open_edges = 0
-    report.nonmanifold_edges = 0
-    report.orientation_conflicts = 0
-    report.degenerate_triangles = 0
-    report.self_intersections = 0
-    report.printable = (
-        solid.status() == m3d.Error.NoError
-        and not solid.is_empty()
-        and solid.num_tri() > 0
-    )
+def validate_manifold(
+    solid: m3d.Manifold, report: SolidReport,
+    vertices: np.ndarray, triangles: np.ndarray,
+) -> None:
+    """Check the coordinates that will be written, including STL welding."""
+    report.printable = False
+    if solid.status() != m3d.Error.NoError or len(triangles) == 0:
+        return
+    if not np.isfinite(vertices).all():
+        return
+    for start in range(0, len(triangles), 100_000):
+        points = vertices[triangles[start:start + 100_000]].astype(np.float64)
+        normals = np.cross(points[:, 1] - points[:, 0], points[:, 2] - points[:, 0])
+        report.degenerate_triangles += int(np.count_nonzero(~np.any(normals, axis=1)))
+
+    _, inverse, counts = np.unique(vertices, axis=0, return_inverse=True, return_counts=True)
+    welded = inverse.ravel()[triangles].astype(np.uint32)
+    a = welded.ravel()
+    b = welded[:, (1, 2, 0)].ravel()
+    stride = len(counts)
+    keys = np.minimum(a, b).astype(np.uint64) * stride + np.maximum(a, b)
+    order = np.argsort(keys)
+    ordered = keys[order]
+    starts = np.r_[0, np.flatnonzero(ordered[1:] != ordered[:-1]) + 1]
+    sizes = np.diff(np.r_[starts, len(order)])
+    report.open_edges = int(np.count_nonzero(sizes == 1))
+    report.nonmanifold_edges = int(np.count_nonzero(sizes > 2))
+    paired = starts[sizes == 2]
+    first = order[paired]
+    second = order[paired + 1]
+    report.orientation_conflicts = int(np.count_nonzero((a[first] < b[first]) == (a[second] < b[second])))
+    if any((report.open_edges, report.nonmanifold_edges, report.orientation_conflicts,
+            report.degenerate_triangles)):
+        return
+    del keys, order, ordered, starts, sizes, a, b, inverse
+
+    # The native manifold supplies valid indexed vertex fans. A coordinate
+    # collision could join two such fans at a point without joining an edge.
+    collided = counts > 1
+    faces, corners = np.nonzero(collided[welded])
+    fans = {}
+    for face, corner in zip(faces.tolist(), corners.tolist()):
+        vertex, x, y = welded[face, [corner, (corner + 1) % 3, (corner + 2) % 3]]
+        graph = fans.setdefault(vertex, {})
+        graph.setdefault(x, []).append(y)
+        graph.setdefault(y, []).append(x)
+    report.nonmanifold_vertices = 0
+    for graph in fans.values():
+        pending = [next(iter(graph))]
+        seen = set()
+        while pending:
+            vertex = pending.pop()
+            if vertex not in seen:
+                seen.add(vertex)
+                pending.extend(graph[vertex])
+        report.nonmanifold_vertices += len(seen) != len(graph)
+    report.printable = report.nonmanifold_vertices == 0
