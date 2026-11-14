@@ -16,13 +16,13 @@ def hollow_cube(size, cavity_size, origin=(0, 0, 0)):
 
 
 class Issue2CavityTests(unittest.TestCase):
-    def test_main_ranks_material_before_filling(self):
+    def test_main_ranks_volume_for_requested_cavity_mode(self):
         source = hollow_cube(10, 9) + m3d.Manifold.cube((7, 7, 7)).translate((12, 0, 0))
-        for cavity in ("fill", "preserve"):
+        for cavity, volume, removed in (("fill", 1000, 343), ("preserve", 343, 271)):
             result, report = self.process(source, cavity, "main")
-            self.assertAlmostEqual(343, result.volume())
-            self.assertAlmostEqual(343, report.main_component_volume)
-            self.assertAlmostEqual(271, report.removed_component_volume)
+            self.assertAlmostEqual(volume, result.volume())
+            self.assertAlmostEqual(volume, report.main_component_volume)
+            self.assertAlmostEqual(removed, report.removed_component_volume)
 
     def test_unknown_cavity_owner_only_blocks_dependent_decisions(self):
         source = hollow_cube(10, 9) + m3d.Manifold.cube().translate((12, 0, 0))

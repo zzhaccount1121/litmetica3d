@@ -377,17 +377,20 @@ def process_components_and_cavities(
         selected_main = min(
             positives,
             key=lambda shell: (
-                -upper[shell.shell_id], shell.bounds, shell.min_triangle
+                -(shell.volume if cavities == "fill" else upper[shell.shell_id]),
+                shell.bounds, shell.min_triangle
             ),
         )
-        if len(positives) > 1 and unresolved and any(
+        if cavities == "preserve" and len(positives) > 1 and unresolved and any(
             lower[selected_main.shell_id] <= upper[shell.shell_id]
             for shell in positives if shell is not selected_main
         ):
             raise ownership_error("空腔归属不明确，无法可靠判断最大材料体积")
         removed = [shell for shell in positives if shell is not selected_main]
         positives = [selected_main]
-        if lower[selected_main.shell_id] == upper[selected_main.shell_id]:
+        if cavities == "fill":
+            report.main_component_volume = selected_main.volume
+        elif lower[selected_main.shell_id] == upper[selected_main.shell_id]:
             report.main_component_volume = upper[selected_main.shell_id]
         else:
             report.main_component_volume = None
